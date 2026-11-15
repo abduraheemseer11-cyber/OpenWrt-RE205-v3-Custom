@@ -71,9 +71,11 @@ jobs:
           PROFILE="${INPUT_PROFILE:-tplink_re205-v3}"
           chmod +x files/etc/uci-defaults/*
           cd imagebuilder
-          if ! make info | grep -q "^${PROFILE}:"; then
+          # Capture first: piping `make info` into `grep -q` breaks the pipe under pipefail.
+          INFO="$(make info)"
+          if ! grep -q "^${PROFILE}:" <<< "$INFO"; then
             echo "::error::Profile '${PROFILE}' not found. Available TP-Link profiles:"
-            make info | grep -E '^(tplink|tp-link)' || true
+            grep -E '^(tplink|tp-link)' <<< "$INFO" || true
             exit 1
           fi
           PACKAGES="$(grep -vE '^\s*(#|$)' ../packages.txt | tr '\n' ' ')"
