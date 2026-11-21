@@ -1,7 +1,0 @@
-# One package per line. Prefix with "-" to remove a default package.
-luci
-luci-theme-bootstrap
-luci-i18n-base-ar
-wpad-basic-mbedtls
-kmod-mt7603
-kmod-mt76x0e

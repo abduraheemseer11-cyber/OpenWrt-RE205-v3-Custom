@@ -1,0 +1,130 @@
+name: Build Alameer OpenWrt 24.10
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+env:
+  OPENWRT_VERSION: "24.10.8"
+  TARGET: "ramips"
+  SUBTARGET: "mt76x8"
+  PROFILE: "tplink_re205-v3"
+  MAX_IMAGE_BYTES: "6000000"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+
+      - name: Install build utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd file
+
+      - name: Download official OpenWrt ImageBuilder
+        shell: bash
+        run: |
+          set -euo pipefail
+          IB="openwrt-imagebuilder-${OPENWRT_VERSION}-${TARGET}-${SUBTARGET}.Linux-x86_64"
+          URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${TARGET}/${SUBTARGET}/${IB}.tar.zst"
+          curl --fail --location --retry 3 "$URL" -o imagebuilder.tar.zst
+          mkdir imagebuilder
+          tar --use-compress-program=unzstd -xf imagebuilder.tar.zst -C imagebuilder --strip-components=1
+          test -f imagebuilder/Makefile
+          echo "IMAGEBUILDER=$PWD/imagebuilder" >> "$GITHUB_ENV"
+
+      - name: Prepare original Bootstrap template and inject Alameer assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$IMAGEBUILDER"
+          mkdir -p files/usr/share/ucode/luci/template/themes/bootstrap
+          # Extract only the vendor theme template from the official 24.10 package.
+          ipk="$(find packages -type f -name 'luci-theme-bootstrap_*.ipk' -print -quit || true)"
+          mkdir -p /tmp/alameer-theme-ipk
+          if [ -n "$ipk" ]; then
+            (cd /tmp/alameer-theme-ipk && ar x "$IMAGEBUILDER/$ipk")
+          else
+            # ImageBuilder may ship package indexes but not the .ipk payload itself.
+            feed="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/mipsel_24kc/luci"
+            curl --fail --location "$feed/Packages.gz" -o /tmp/alameer-luci-Packages.gz
+            filename="$(gzip -dc /tmp/alameer-luci-Packages.gz | awk 'BEGIN { RS=""; FS="\\n" } $1 == "Package: luci-theme-bootstrap" { for (i=1; i<=NF; i++) if ($i ~ /^Filename: /) { sub(/^Filename: /, "", $i); print $i; exit } }')"
+            test -n "$filename"
+            curl --fail --location "$feed/$filename" -o /tmp/luci-theme-bootstrap.ipk
+            (cd /tmp/alameer-theme-ipk && ar x /tmp/luci-theme-bootstrap.ipk)
+          fi
+          data="$(find /tmp/alameer-theme-ipk -maxdepth 1 -type f -name 'data.tar*' -print -quit)"
+          test -n "$data"
+          mkdir -p /tmp/alameer-theme-data
+          tar -xf "$data" -C /tmp/alameer-theme-data
+          template="$(find /tmp/alameer-theme-data -type f -path '*/usr/share/ucode/luci/template/themes/bootstrap/header.ut' -print -quit)"
+          test -n "$template"
+          install -m 0644 "$template" files/usr/share/ucode/luci/template/themes/bootstrap/header.ut
+          cp -a "$GITHUB_WORKSPACE/files/." files/
+          "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh" files
+          # Keep the final overlay's custom assets and executable first-boot script.
+          chmod 0755 files/etc/uci-defaults/99-custom-config
+
+      - name: Build device firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$IMAGEBUILDER"
+          PACKAGES="luci-base luci-mod-admin-full luci-theme-bootstrap uhttpd uhttpd-mod-ubus -ppp -ppp-mod-pppoe -odhcpd-ipv6only -ip6tables -kmod-ip6tables -luci-app-firewall"
+          make image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          find bin -type f -name "*${PROFILE}*squashfs-*.bin" -exec cp -v {} "$GITHUB_WORKSPACE/dist/" \;
+          ls -lh "$GITHUB_WORKSPACE/dist"
+
+      - name: Enforce image size and required outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          factory=(dist/*"${PROFILE}"*factory.bin)
+          sysupgrade=(dist/*"${PROFILE}"*sysupgrade.bin)
+          if (( ${#factory[@]} == 0 )); then
+            echo "No factory image was produced for this profile; refusing to mislabel another image." >&2
+            find dist -maxdepth 1 -type f -print
+            exit 1
+          fi
+          if (( ${#sysupgrade[@]} == 0 )); then
+            echo "No sysupgrade image was produced for this profile." >&2
+            exit 1
+          fi
+          for image in "${factory[@]}" "${sysupgrade[@]}"; do
+            bytes="$(stat -c %s "$image")"
+            echo "$image: $bytes bytes"
+            if (( bytes >= MAX_IMAGE_BYTES )); then
+              echo "FAIL: $image is not strictly below 6,000,000 bytes." >&2
+              exit 1
+            fi
+            file "$image"
+          done
+          (cd dist && sha256sum *.bin > SHA256SUMS)
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: alameer-openwrt-${{ env.OPENWRT_VERSION }}-${{ env.PROFILE }}
+          path: |
+            dist/*.bin
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release for version tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.bin
+            dist/SHA256SUMS
+          generate_release_notes: true
