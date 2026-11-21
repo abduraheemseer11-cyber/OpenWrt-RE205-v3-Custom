@@ -1,0 +1,7 @@
+# One package per line. Prefix with "-" to remove a default package.
+# NOTE: ImageBuilder has no .config file; packages are passed to `make image PACKAGES=...`.
+luci
+luci-i18n-base-ar
+wpad-basic-mbedtls
+kmod-mt7603
+kmod-mt76x0e
