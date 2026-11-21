@@ -1,0 +1,4 @@
+# generated at build time from upstream luci-theme-bootstrap (see scripts/prepare-theme.sh)
+files/usr/share/ucode/luci/template/themes/almakhdhi/
+upstream-debug/
+__pycache__/

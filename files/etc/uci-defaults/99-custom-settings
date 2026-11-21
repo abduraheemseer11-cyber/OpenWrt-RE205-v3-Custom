@@ -103,8 +103,8 @@ cat > /etc/banner <<'BANNER'
 
   +--------------------------------------------------+
   |                                                  |
-  |        Welcome to  A b d u R a h e e m           |
-  |        TP-Link RE205 v3  -  OpenWrt custom       |
+  |              Welcome to  AbduRaheem              |
+  |       TP-Link RE205 v3  -  OpenWrt custom        |
   |                                                  |
   +--------------------------------------------------+
 

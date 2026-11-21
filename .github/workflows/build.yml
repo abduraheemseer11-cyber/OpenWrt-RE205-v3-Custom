@@ -35,6 +35,9 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git \
             gettext libssl-dev xsltproc rsync wget unzip python3 zstd file
 
+      - name: Run offline tests
+        run: bash tests/run_tests.sh
+
       - name: Resolve OpenWrt version
         id: ver
         env:
@@ -63,6 +66,15 @@ jobs:
           tar --zstd -xf "${FILE}"
           mv "${FILE%.tar.zst}" imagebuilder
 
+      - name: Derive LuCI theme templates from upstream luci-theme-bootstrap
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARCH="$(grep -oP 'CONFIG_TARGET_ARCH_PACKAGES="\K[^"]+' imagebuilder/.config || true)"
+          echo "Package architecture: ${ARCH:-mipsel_24kc (default)}"
+          bash scripts/prepare-theme.sh "$V" "${ARCH:-mipsel_24kc}"
+
       - name: Build image
         env:
           INPUT_PROFILE: ${{ inputs.profile }}
@@ -84,6 +96,9 @@ jobs:
           make image PROFILE="${PROFILE}" PACKAGES="${PACKAGES}" \
                FILES="${GITHUB_WORKSPACE}/files" EXTRA_IMAGE_NAME="custom"
 
+      - name: Verify firmware contents
+        run: bash tests/verify_image_contents.sh imagebuilder
+
       - name: Collect output
         run: |
           set -euo pipefail
@@ -100,3 +115,11 @@ jobs:
           name: openwrt-re205-v3-${{ steps.ver.outputs.version }}
           path: out/*
           if-no-files-found: error
+
+      - name: Upload upstream theme files (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-luci-theme-bootstrap
+          path: upstream-debug/
+          if-no-files-found: ignore

@@ -1,50 +1,83 @@
-# OpenWrt custom build - TP-Link RE205 v3
+# AlMakhdhi SoftWare — OpenWrt 24.10 لجهاز TP-Link RE205 v3
 
-Automatic GitHub Actions build of OpenWrt 24.10.x (latest point release, resolved at build time)
-for **TP-Link RE205 v3** (MT7628AN, 64 MB RAM, 8 MB flash, ramips/mt76x8) using the official ImageBuilder.
+فيرموير مخصص لـ **TP-Link RE205 v3** (MT7628AN، ‏8MB Flash، ‏64MB RAM، `ramips/mt76x8`) يُبنى تلقائياً عبر **GitHub Actions** باستخدام **OpenWrt ImageBuilder** الرسمي، مع واجهة LuCI مخصصة بهوية **AlMakhdhi SoftWare** وشعار **ALAMEER SOFTWARE** الأصلي.
 
-## Baked-in defaults (`files/etc/uci-defaults/99-custom-settings`)
+## الإعدادات الافتراضية المدمجة (لم تتغير)
 
-| Setting | Value |
+| الإعداد | القيمة |
 |---|---|
-| LAN IP | 192.168.1.20 / 255.255.255.0 |
-| DHCP (IPv4) | disabled (`dhcp.lan.ignore=1`) |
-| DHCPv6 / RA / NDP | disabled; LAN `ip6assign` and ULA prefix removed |
-| 2.4 GHz SSID | `AbduRaheem_2G` |
-| 5 GHz SSID | `ABDURAHEEM_5G` |
-| TX power | 20 dBm (capped by driver/regulatory domain) |
-| Hostname | `AbduRaheem` |
-| SSH banner | `files/etc/banner` (contains AbduRaheem) |
+| عنوان LAN | `192.168.1.20` / `255.255.255.0` |
+| DHCP IPv4 | معطّل |
+| DHCPv6 / RA / NDP | معطّلة (مع إزالة ULA و ip6assign) |
+| شبكة 2.4GHz | `AbduRaheem_2G` |
+| شبكة 5GHz | `ABDURAHEEM_5G` |
+| قدرة الإرسال | 20 dBm (ضمن حدود العتاد والتشريعات) |
+| اسم الجهاز | `AbduRaheem` |
+| لافتة SSH | `files/etc/banner` |
 
-The variables at the top of the script (WIFI_KEY, COUNTRY, GATEWAY, DNS...) can be edited before building.
+تُطبَّق من `files/etc/uci-defaults/99-custom-settings` (يمكنك تعديل المتغيرات في أعلى الملف: `WIFI_KEY`، `COUNTRY`، `GATEWAY`، `DNS`).
 
-## Layout
+## الواجهة الجديدة
+
+* **الشريط العلوي** بنفسجي غامق ثابت: الشعار الأصلي داخل شارة دائرية بيضاء + النص `AlMakhdhi SoftWare` + زر القائمة (Hamburger) + تبديل اللغة (العربية/English) + وضع داكن اختياري. مؤشر "التغييرات غير المحفوظة" الأصلي في LuCI يبقى كما هو.
+* **القائمة الجانبية** تُولَّد من شجرة قوائم LuCI الفعلية (`ui.menu`)، لذلك تظهر **كل** صفحات LuCI والحزم المثبتة تلقائياً (Status، System، Network، Services/VPN إن وُجدت، Logout …) ولا تُحذف أي وظيفة. قابلة للتمرير، وتتحول إلى قائمة منزلقة على الهاتف مع طبقة تعتيم، وتُغلق بالضغط على الخارج أو Esc.
+* **Dashboard** (`admin/dashboard`، أول عنصر فتظهر بعد تسجيل الدخول): بيانات حقيقية من `ubus`/`sysfs` تتحدث كل 3 ثوانٍ — اسم الجهاز، الموديل، إصدار OpenWrt، مدة التشغيل، عنوان IP، حالة الإنترنت (وجود مسار افتراضي + `ping` إلى 1.1.1.1)، حالة الواي فاي وعدد العملاء، المعالج وحمل النظام، الحرارة إن وُجد حساس (أغلب أجهزة MT7628 لا تملك حساساً فيظهر "غير متوفر")، الذاكرة والتخزين، ورسمان بيانيان (RAM وحمل المعالج) من القراءات الفعلية.
+* **Quick Setup** (`admin/quicksetup`): معالج من 4 خطوات (ترحيب ← LAN ← Wireless ← مراجعة وتطبيق). يقرأ الإعدادات الحالية من UCI، ويتحقق من المدخلات (IP، قناع متصل، Gateway داخل نفس الشبكة، SSID حتى 32 بايت، كلمة مرور WPA2 من 8 إلى 63 حرفاً أو 64 hex)، ثم يحفظ بـ `uci.save()` ويطبق بـ `uci.apply()` (نفس آلية "Save & Apply"). كلمة مرور الواي فاي اختيارية: **بدون كلمة مرور = شبكة مفتوحة** (مع تحذير). عند تغيير عنوان IP يُعرض تنبيه بالعنوان الجديد ثم يُحوَّل المتصفح إليه تلقائياً. الخطوات تعرض فقط الفروقات الفعلية ولا تُظهر كلمة المرور في المراجعة.
+* **اللغة**: العربية RTL والإنجليزية LTR. حزمة `luci-i18n-base-ar` تترجم صفحات LuCI الأصلية، وملف `almakhdhi/i18n.js` يترجم عناصر الثيم الجديدة. الاتجاه يُضبط تلقائياً حسب لغة LuCI.
+
+## كيف يعمل (ولماذا هذه الطريقة)
+
+بنية قوالب LuCI تتغير بين الإصدارات، ولا يمكن تخمين `header.ut` بأمان. لذلك:
+
+1. أثناء البناء، `scripts/prepare-theme.sh` يحمّل حزمة `luci-theme-bootstrap` **الحقيقية** من نفس إصدار OpenWrt (مع التحقق من SHA256) ويشتق منها قوالب الثيم `almakhdhi` عبر `scripts/patch_theme.py`، بثلاثة إدراجات فقط (سكربت مبكر لضبط الاتجاه/الوضع، وأيقونة الموقع، وتحميل `menu-almakhdhi`). إن تغيّرت بنية القوالب يتوقف البناء برسالة واضحة بدل إنتاج واجهة معطوبة.
+2. `cascade.css` الخاص بالثيم يستورد `/luci-static/bootstrap/cascade.css` المثبت أصلاً (نماذج، جداول، أزرار، نوافذ…) ثم يضيف الهوية البنفسجية والتخطيط الجديد.
+3. القائمة الأصلية لـ LuCI تعمل أسفل الواجهة ولا تُخفى إلا بعد نجاح بناء القائمة الجديدة (`body.amk-ready`)، فإذا فشل أي سكربت تبقى القائمة الأصلية ظاهرة ولا تضيع أي صفحة.
+4. لا مكتبات خارجية ولا React/Vue ولا خطوط ويب ولا حزم جديدة. كل ما أضافه الثيم نحو **77KB** غير مضغوطة (والشعار المصغَّر 8.5KB). الشعار الأصلي بدقته الكاملة محفوظ في `assets/logo-original.png` والنسخة المصغّرة (نفس التصميم) في الفيرموير.
+
+`luci-theme-bootstrap` يبقى مثبتاً كثيم احتياطي.
+
+## هيكل المشروع
 
 ```
-.github/workflows/build.yml          GitHub Actions workflow
-files/etc/uci-defaults/99-custom-settings   first-boot settings script
-files/etc/banner                     SSH/login banner
-packages.txt                         packages passed to ImageBuilder
+.github/workflows/build.yml                      بناء GitHub Actions
+packages.txt                                     الحزم (لم تتغير)
+assets/logo-original.png                         الشعار الأصلي
+scripts/prepare-theme.sh, patch_theme.py         اشتقاق قوالب الثيم من LuCI الرسمي
+files/etc/banner, files/etc/uci-defaults/99-...  الإعدادات الافتراضية (محفوظة)
+files/etc/uci-defaults/98-almakhdhi-theme        تفعيل الثيم كافتراضي
+files/usr/share/luci/menu.d/...json              صفحتا Dashboard وQuick Setup في قائمة LuCI
+files/usr/share/rpcd/acl.d/...json               صلاحيات ACL (قراءة فقط لما تحتاجه الصفحات)
+files/www/luci-static/almakhdhi/                 CSS، الشعار، favicon
+files/www/luci-static/resources/                 menu-almakhdhi.js وصفحات dashboard/quicksetup وi18n
+tests/                                           الاختبارات الآلية
 ```
-ImageBuilder does not use a `.config` file, so packages live in `packages.txt` (one per line, `-name` removes one).
 
-## How to build
+## الرفع والبناء على GitHub
 
-1. Create a new GitHub repository and upload **the contents of this folder** (keep the `.github` folder; it is hidden on some systems).
-2. Open **Actions** > *Build OpenWrt - TP-Link RE205 v3*. It runs on every push to `main`, or press **Run workflow** (you may set a version such as `24.10.4`, or a profile).
-3. When finished, download the artifact `openwrt-re205-v3-<version>` from the run page. It contains the `sysupgrade` and `factory` images, `sha256sums` and the manifest.
+1. أنشئ مستودعاً جديداً، فك الضغط، وارفع **محتويات** المجلد كما هي (انتبه لظهور المجلد المخفي `.github`). من الطرفية: `git init && git add -A && git commit -m "AlMakhdhi SoftWare" && git branch -M main && git remote add origin <URL> && git push -u origin main`.
+2. افتح **Actions** ← *Build OpenWrt - TP-Link RE205 v3*. يعمل تلقائياً عند كل push على `main`، أو من **Run workflow** (يمكن تحديد الإصدار مثل `24.10.8`).
+3. الخطوات: اختبارات آلية ← تحديد أحدث 24.10.x ← تنزيل ImageBuilder والتحقق من SHA256 ← اشتقاق قوالب الثيم ← `make image` ← فحص محتوى الصورة ← رفع `factory` و`sysupgrade` كـ Artifacts.
+4. إن فشلت خطوة "Derive LuCI theme templates" فحمّل الـ artifact `upstream-luci-theme-bootstrap` (يحتوي قوالب LuCI الفعلية) وأرسله لي لأعدّل الثيم.
 
-## Flashing
+## الاستخدام بعد التفليش
 
-- From stock TP-Link firmware: use the web UI firmware upgrade with the **factory** image.
-- From an existing OpenWrt: `sysupgrade -n` with the **sysupgrade** image (or LuCI > System > Backup/Flash Firmware).
-- Back up the original flash first (`/dev/mtd*`) - flashing is at your own risk.
+* ادخل إلى `http://192.168.1.20/` (جهازك يحتاج IP ثابتاً في نفس الشبكة لأن DHCP معطّل). لا توجد كلمة مرور لـ root في أول إقلاع: عيّنها من LuCI (System ← Administration) أو عبر telnet بالأمر `passwd`، وبعدها يعمل SSH.
+* الشبكتان مفتوحتان افتراضياً كما في OpenWrt؛ ضع كلمة مرور من Quick Setup أو عبر `WIFI_KEY` في السكربت قبل البناء.
+* **العودة إلى الثيم الأصلي** إذا تعطلت الواجهة لأي سبب (من SSH أو Failsafe):
+  `uci set luci.main.mediaurlbase='/luci-static/bootstrap' && uci commit luci`
 
-## Important notes
+## الاختبارات
 
-- **Profile name:** ImageBuilder profile names use the form `tplink_re205-v3` (not `tp-link_...`). The workflow checks that the profile exists and, if not, prints the available TP-Link profiles in the log; then re-run with the right name via *Run workflow*.
-- **Wi-Fi is OPEN by default** (as in stock OpenWrt, and no password was requested). Set `WIFI_KEY` in the script (8+ chars) to use WPA2-PSK, or set it from LuCI after first boot.
-- **No root password on first boot:** OpenWrt then offers telnet only and SSH stays closed until a root password is set (via telnet `passwd`, or LuCI > System > Administration). Bake one in only if you accept it living in a public repo (use a private repo).
-- **Static IP only, no DHCP:** to reach the router, set your PC to a 192.168.1.x address. Without `GATEWAY`/`DNS` the router itself has no route to the internet (so no `opkg update`).
-- **TX power:** 20 dBm is requested, but the mt76 drivers cap it by hardware limits and country code; set `COUNTRY` if needed and check with `iwinfo`.
-- `luci-i18n-base-ar` gives LuCI an Arabic interface; remove it from `packages.txt` if you don't want it.
+```
+bash tests/run_tests.sh        # يحتاج bash وpython3 وnode فقط، دون جهاز ودون إنترنت
+```
+
+* فحص صياغة كل ملفات JS؛ فحص المسارات وJSON والـ ACL والـ CSS وميزانية الحجم وخطوات سير العمل والحزم.
+* اختبارات وحدات لمحققات Quick Setup وخطة التعديل (أكثر من 18 حالة)، وتغطية الترجمة العربية لكل نص أضافه الثيم.
+* تشغيل شيفرة Dashboard وQuick Setup والقائمة الجانبية فعلياً على DOM وهمي مع بيانات ubus/uci محاكاة (تدفق المعالج كاملاً، الأخطاء، الأجهزة أحادية النطاق، العربية، الهاتف/الحاسوب، تبديل اللغة، صفحة الدخول).
+* تشغيل سكربتي `98` و`99` الحقيقيين على `uci` محاكى والتحقق من كل قيمة افتراضية.
+* في GitHub Actions أيضاً: فحص أن ملفات الثيم والإعدادات موجودة فعلاً داخل نظام الملفات الذي سيُحزَّم.
+
+### ما الذي لم يُختبر
+
+لم يُشغَّل الفيرموير على راوتر حقيقي ولم يُبنَ فعلياً في بيئة التطوير هذه (لا إنترنت). **لم تُفحص** القوالب الحقيقية لـ LuCI ولا العرض البصري في المتصفح ولا تطبيق uci/ubus الحقيقي. هذه الأمور يتحقق منها سير عمل GitHub (حتى مرحلة البناء) ثم تجربتك على الجهاز. أرسل لي لقطة شاشة أو سجل الخطأ وأضبط التصميم.
