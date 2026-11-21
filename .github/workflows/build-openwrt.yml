@@ -23,6 +23,17 @@ jobs:
       - name: Check out project
         uses: actions/checkout@v4
 
+      - name: Validate project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f files/etc/uci-defaults/99-custom-config || { echo "Missing files/etc/uci-defaults/99-custom-config" >&2; exit 1; }
+          test -f scripts/inject-theme-assets.sh || { echo "Missing scripts/inject-theme-assets.sh" >&2; exit 1; }
+          test -f files/www/luci-static/bootstrap/alameer.css
+          test -f files/www/luci-static/resources/alameer.js
+          test -f files/www/luci-static/resources/logo.png
+          chmod 0755 files/etc/uci-defaults/99-custom-config scripts/inject-theme-assets.sh
+
       - name: Install build utilities
         run: |
           sudo apt-get update
@@ -90,7 +101,10 @@ jobs:
           install -m 0644 "$template" files/usr/share/ucode/luci/template/themes/bootstrap/header.ut
           cp -a "$GITHUB_WORKSPACE/files/." files/
           "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh" files
-          # Keep the final overlay's custom assets and executable first-boot script.
+          # The project uses 99-custom-config and inject-theme-assets.sh.
+          # Do not reference legacy names such as 99-custom-settings or patch_theme.py.
+          test -f files/etc/uci-defaults/99-custom-config
+          test -f "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh"
           chmod 0755 files/etc/uci-defaults/99-custom-config
 
       - name: Build device firmware
