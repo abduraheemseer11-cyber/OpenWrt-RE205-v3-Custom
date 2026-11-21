@@ -1,0 +1,36 @@
+/* Alameer Software — compact dark-violet LuCI skin */
+:root{color-scheme:dark;--bg:#130722;--panel:#261042;--panel2:#1e0b36;--line:#3e1d6b;--accent:#7c3aed;--hover:#9333ea;--red:#991b1b;--fg:#f8fafc;--muted:#cbd5e1;--ok:#10b981;--warn:#f59e0b}
+html,body{background:var(--bg)!important;color:var(--fg)!important;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+body{background-image:radial-gradient(ellipse at 10% 0%,#35115b55,transparent 42%)!important}
+header,#header,.navbar,.navbar-inverse{background:linear-gradient(110deg,#130722,#1e0b36)!important;border:0!important;box-shadow:0 5px 24px #0008}
+header a,.navbar a,#header a{color:var(--fg)!important}
+#maincontent,.main,.container,.cbi-map,.cbi-section,.modal-content{color:var(--fg)}
+#maincontent{background:transparent!important}
+.panel,.cbi-section,.cbi-map,.well,.alert,.modal-content,.ifacebox,.node-main,#mainmenu>.dropdown-menu{background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:14px!important;box-shadow:0 10px 28px #0003}
+h1,h2,h3,h4,.panel-title{color:var(--fg)!important}
+small,.help-block,.cbi-value-description,.text-muted,.label-description{color:var(--muted)!important}
+a{color:#c4b5fd}a:hover{color:#e9d5ff}
+.btn,button,input[type=submit],input[type=button]{background:var(--accent)!important;color:white!important;border:1px solid #8b5cf6!important;border-radius:9px!important;box-shadow:none!important;text-shadow:none!important}
+.btn:hover,button:hover,input[type=submit]:hover{background:var(--hover)!important}
+.btn-danger{background:var(--red)!important;border-color:#b91c1c!important}
+input,select,textarea,.form-control{background:#180a2b!important;color:var(--fg)!important;border:1px solid var(--line)!important;border-radius:8px!important;box-shadow:none!important}
+input:focus,select:focus,textarea:focus{border-color:var(--hover)!important;outline:2px solid #7c3aed44!important}
+.table,.table>tbody>tr>td,.table>thead>tr>th{color:var(--fg)!important;border-color:var(--line)!important}
+.table-striped>tbody>tr:nth-of-type(odd){background:#321650!important}
+.table-hover>tbody>tr:hover{background:#3b1b5e!important}
+#mainmenu,.mainmenu,.nav{background:transparent}
+#mainmenu a,.nav-tabs>li>a{color:var(--muted)!important;border-radius:8px}
+#mainmenu a:hover,.nav-tabs>li>a:hover,.nav-tabs>li.active>a{background:#3b1b5e!important;color:white!important;border-color:var(--line)!important}
+.label-success,.badge-success{background:var(--ok)!important}.label-warning{background:var(--warn)!important}
+hr{border-color:var(--line)!important}
+.login,.login-form{background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:18px!important;box-shadow:0 20px 60px #0008!important}
+.login:before{content:"";display:block;width:96px;height:96px;margin:0 auto 12px;background:url("/luci-static/resources/logo.png") center/contain no-repeat}
+.brand,.navbar-brand{font-weight:800!important;letter-spacing:.04em}
+.brand:after,.navbar-brand:after{content:"AlMakhdhi SoftWare";margin-left:12px;color:#f8fafc;font-weight:800}
+@media(max-width:767px){.container{width:100%!important;padding-left:12px!important;padding-right:12px!important}.panel,.cbi-section,.cbi-map{border-radius:11px!important}h2{font-size:20px}}
+
+#alameer-drawer-toggle{position:relative;z-index:1200;display:inline-flex;flex-direction:column;justify-content:center;gap:4px;width:42px;height:38px;margin:8px 12px;padding:8px;background:#261042;border:1px solid #3e1d6b;border-radius:9px;cursor:pointer}
+#alameer-drawer-toggle span{display:block;width:100%;height:2px;background:#f8fafc;border-radius:2px}
+@media(min-width:768px){#mainmenu{position:fixed!important;z-index:1100;left:0;top:56px;bottom:0;width:248px;overflow:auto;padding:16px;background:#1e0b36!important;border-right:1px solid #3e1d6b!important;transform:translateX(-100%);transition:transform .22s ease}.alameer-menu-open #mainmenu{transform:translateX(0)}#maincontent{margin-left:0!important;transition:margin-left .22s ease}.alameer-menu-open #maincontent{margin-left:248px!important}}
+
+.alameer-brand-logo{width:34px;height:34px;object-fit:contain;vertical-align:middle;margin-right:8px}
