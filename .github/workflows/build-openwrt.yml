@@ -32,7 +32,8 @@ jobs:
           test -f files/www/luci-static/bootstrap/alameer.css
           test -f files/www/luci-static/resources/alameer.js
           test -f files/www/luci-static/resources/logo.png
-          chmod 0755 files/etc/uci-defaults/99-custom-config scripts/inject-theme-assets.sh
+          test -f files/usr/bin/alameer-reset-wireless
+          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless scripts/inject-theme-assets.sh
 
       - name: Install build utilities
         run: |
@@ -141,8 +142,9 @@ jobs:
           cp -a "$GITHUB_WORKSPACE/files/." files/
           "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh" files
           test -f files/etc/uci-defaults/99-custom-config
+          test -f files/usr/bin/alameer-reset-wireless
           test -f "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh"
-          chmod 0755 files/etc/uci-defaults/99-custom-config
+          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless
 
       - name: Build device firmware
         shell: bash

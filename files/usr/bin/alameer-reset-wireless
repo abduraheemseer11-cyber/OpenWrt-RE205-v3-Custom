@@ -1,0 +1,46 @@
+#!/bin/sh
+# Remove all pre-existing AP/station interfaces on both radios, then create exactly one AP per radio.
+set -eu
+
+for radio in radio0 radio1; do
+    uci -q get "wireless.${radio}" >/dev/null || {
+        echo "Missing wireless.${radio}; check the RE205 v3 radio configuration." >&2
+        exit 1
+    }
+done
+
+# Delete every wifi-iface assigned to either physical radio, including vendor defaults
+# and duplicate sections left by previous configurations.
+uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p' | while IFS= read -r section; do
+    [ -n "$section" ] || continue
+    device="$(uci -q get "wireless.${section}.device" 2>/dev/null || true)"
+    case "$device" in
+        radio0|radio1) uci -q delete "wireless.${section}" ;;
+    esac
+done
+
+uci set wireless.radio0.disabled='0'
+uci set wireless.radio1.disabled='0'
+
+uci set wireless.alameer_2g='wifi-iface'
+uci set wireless.alameer_2g.device='radio0'
+uci set wireless.alameer_2g.mode='ap'
+uci set wireless.alameer_2g.network='lan'
+uci set wireless.alameer_2g.ssid='AbduRaheem_2G'
+uci set wireless.alameer_2g.encryption='none'
+
+uci set wireless.alameer_5g='wifi-iface'
+uci set wireless.alameer_5g.device='radio1'
+uci set wireless.alameer_5g.mode='ap'
+uci set wireless.alameer_5g.network='lan'
+uci set wireless.alameer_5g.ssid='AbduRaheem_5G'
+uci set wireless.alameer_5g.encryption='none'
+
+uci set wireless.radio0.channel='6'
+uci set wireless.radio0.txpower='30'
+uci set wireless.radio1.channel='36'
+uci set wireless.radio1.htmode='HT40'
+uci set wireless.radio1.txpower='30'
+
+uci commit wireless
+wifi reload >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true
