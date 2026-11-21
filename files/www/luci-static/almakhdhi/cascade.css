@@ -43,6 +43,8 @@ html[data-amk-theme="dark"] {
 
 html { color-scheme: light; }
 html[data-amk-theme="dark"] { color-scheme: dark; }
+html, body { min-width: 0; }
+body { overflow-x: hidden; }
 
 html body {
 	background: var(--amk-bg);
@@ -61,7 +63,11 @@ a:hover { color: var(--amk-primary-hover); }
 .amk-header {
 	position: fixed !important;
 	top: 0; left: 0; right: 0;
+	width: auto !important;
+	max-width: none !important;
 	height: var(--amk-header-h);
+	margin: 0 !important;
+	box-sizing: border-box;
 	z-index: 900;
 	background: var(--amk-header-bg) !important;
 	color: #fff;
