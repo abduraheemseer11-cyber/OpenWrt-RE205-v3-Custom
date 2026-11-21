@@ -57,15 +57,55 @@ jobs:
           set -euo pipefail
           cd "$IMAGEBUILDER"
           mkdir -p files/usr/share/ucode/luci/template/themes/bootstrap
-          # Extract only the vendor theme template from the official 24.10 package.
+
+          # OpenWrt feeds/CDN may serve this payload as an ar IPK, a tar-wrapped
+          # IPK, or gzip-compressed tar. Normalize all supported forms before
+          # extracting data.tar.*. Never assume that a .ipk suffix proves format.
+          extract_theme_package() {
+            local source="$1" destination="$2" payload="$1" magic
+            mkdir -p "$destination"
+
+            magic="$(od -An -tx1 -N2 "$payload" | tr -d '[:space:]')"
+            if [[ "$magic" == "1f8b" ]]; then
+              echo "Package payload is gzip-compressed; unpacking transport/container layer."
+              gzip -t "$payload"
+              payload="${payload}.ungz"
+              gzip -dc "$source" > "$payload"
+            fi
+
+            if ar t "$payload" >/tmp/alameer-ar-members.txt 2>/dev/null \
+              && grep -Eq '(^|/)debian-binary$' /tmp/alameer-ar-members.txt; then
+              echo "Recognized Debian ar/IPK container."
+              (cd "$destination" && ar x "$payload")
+            elif tar -tf "$payload" >/tmp/alameer-tar-members.txt 2>/dev/null \
+              && grep -Eq '(^|\./)debian-binary$' /tmp/alameer-tar-members.txt; then
+              echo "Recognized tar-wrapped IPK container."
+              tar -xf "$payload" -C "$destination"
+            else
+              echo "Unsupported luci-theme-bootstrap package container." >&2
+              file "$source" >&2 || true
+              echo "Payload after optional gzip decoding:" >&2
+              file "$payload" >&2 || true
+              echo "First 32 bytes (hex):" >&2
+              od -An -tx1 -N32 "$payload" >&2 || true
+              echo "Archive listing (if readable):" >&2
+              cat /tmp/alameer-ar-members.txt /tmp/alameer-tar-members.txt 2>/dev/null >&2 || true
+              return 1
+            fi
+
+            find "$destination" -type f -name debian-binary -print -quit | grep -q . || {
+              echo "Container did not include debian-binary." >&2
+              return 1
+            }
+            find "$destination" -type f -name 'data.tar*' -print -quit | grep -q . || {
+              echo "Container did not include data.tar.*." >&2
+              return 1
+            }
+          }
+
           ipk="$(find packages -type f -name 'luci-theme-bootstrap_*.ipk' -print -quit || true)"
-          mkdir -p /tmp/alameer-theme-ipk
-          if [ -n "$ipk" ]; then
-            (cd /tmp/alameer-theme-ipk && ar x "$IMAGEBUILDER/$ipk")
-          else
-            # ImageBuilder may ship package indexes but not the .ipk payload itself.
-            # 24.10 packages use the rolling packages-24.10 feed path, not
-            # releases/24.10.8/packages/ (which is not the LuCI feed location).
+          if [ -z "$ipk" ]; then
+            # The ImageBuilder archive may include indexes but not package payloads.
             feed="https://downloads.openwrt.org/releases/packages-24.10/mipsel_24kc/luci"
             index=/tmp/alameer-luci-Packages.gz
             ipk=/tmp/luci-theme-bootstrap.ipk
@@ -79,50 +119,27 @@ jobs:
             case "$filename" in
               /*|*..*) echo "Unsafe package path from feed index: $filename" >&2; exit 1 ;;
             esac
-            # Some download/CDN paths return the IPK wrapped in HTTP gzip
-            # content-encoding. Ask curl to decode it, then normalize a gzip
-            # wrapper if one is still present before passing the file to ar.
-            curl --fail --location --retry 3 --retry-all-errors --compressed "$feed/$filename" -o "$ipk"
+            # Do not use curl --compressed here: preserve the actual response
+            # bytes so the container can be identified and normalized explicitly.
+            curl --fail --location --retry 3 --retry-all-errors "$feed/$filename" -o "$ipk"
             echo "Downloaded package: $filename"
-            file "$ipk"
-
-            magic="$(od -An -tx1 -N2 "$ipk" | tr -d '[:space:]')"
-            if [ "$magic" = "1f8b" ]; then
-              echo "Download is gzip-wrapped; decompressing transport wrapper."
-              gzip -t "$ipk"
-              gzip -dc "$ipk" > "${ipk}.decoded"
-              mv "${ipk}.decoded" "$ipk"
-            fi
-
-            # A valid Debian/OpenWrt .ipk is an ar archive beginning !<arch>.
-            archive_magic="$(od -An -tx1 -N8 "$ipk" | tr -d '[:space:]')"
-            if [ "$archive_magic" != "213c617263683e0a" ]; then
-              echo "Downloaded luci-theme-bootstrap is not an ar archive after gzip normalization." >&2
-              echo "Detected file type:" >&2
-              file "$ipk" >&2 || true
-              echo "First 32 bytes (hex):" >&2
-              od -An -tx1 -N32 "$ipk" >&2 || true
-              exit 1
-            fi
-            if ! ar t "$ipk" >/tmp/alameer-ipk-members.txt 2>/tmp/alameer-ipk-ar-error || ! grep -q '^debian-binary$' /tmp/alameer-ipk-members.txt; then
-              echo "Downloaded luci-theme-bootstrap has an invalid IPK archive structure." >&2
-              cat /tmp/alameer-ipk-ar-error >&2 || true
-              cat /tmp/alameer-ipk-members.txt >&2 || true
-              exit 1
-            fi
-            (cd /tmp/alameer-theme-ipk && ar x "$ipk")
+          else
+            ipk="$IMAGEBUILDER/$ipk"
+            echo "Using ImageBuilder package: $ipk"
           fi
-          data="$(find /tmp/alameer-theme-ipk -maxdepth 1 -type f -name 'data.tar*' -print -quit)"
+
+          file "$ipk"
+          rm -rf /tmp/alameer-theme-ipk /tmp/alameer-theme-data
+          mkdir -p /tmp/alameer-theme-ipk /tmp/alameer-theme-data
+          extract_theme_package "$ipk" /tmp/alameer-theme-ipk
+          data="$(find /tmp/alameer-theme-ipk -type f -name 'data.tar*' -print -quit)"
           test -n "$data"
-          mkdir -p /tmp/alameer-theme-data
           tar -xf "$data" -C /tmp/alameer-theme-data
           template="$(find /tmp/alameer-theme-data -type f -path '*/usr/share/ucode/luci/template/themes/bootstrap/header.ut' -print -quit)"
-          test -n "$template"
+          test -n "$template" || { echo "Bootstrap header template not found in package payload." >&2; exit 1; }
           install -m 0644 "$template" files/usr/share/ucode/luci/template/themes/bootstrap/header.ut
           cp -a "$GITHUB_WORKSPACE/files/." files/
           "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh" files
-          # The project uses 99-custom-config and inject-theme-assets.sh.
-          # Do not reference legacy names such as 99-custom-settings or patch_theme.py.
           test -f files/etc/uci-defaults/99-custom-config
           test -f "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh"
           chmod 0755 files/etc/uci-defaults/99-custom-config

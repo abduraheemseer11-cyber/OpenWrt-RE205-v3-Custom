@@ -65,3 +65,13 @@ The build job extracts the original Bootstrap `header.ut` from the official `luc
 The ImageBuilder retains the target's device-required packages and adds `luci-base`, `luci-mod-admin-full`, `luci-theme-bootstrap`, `uhttpd` and `uhttpd-mod-ubus`. The workflow removes the requested legacy PPP/IPv6/firewall UI packages where present. ImageBuilder dependency resolution remains authoritative; do not remove target-required kernel or wireless packages to force a smaller file.
 
 If the size gate fails, remove optional LuCI modules/assets or choose a smaller UI, then rebuild and retest. Do not bypass the check or flash an oversized image.
+
+### Bootstrap package extraction compatibility
+
+The build workflow now validates the downloaded Bootstrap package by its archive
+contents instead of trusting the `.ipk` suffix. It supports the standard Debian
+`ar` IPK container and the tar-wrapped form observed in some feed/CDN responses,
+including a gzip-compressed outer tar. It then verifies `debian-binary` and
+`data.tar.*` before extracting the vendor header template. The package download
+intentionally avoids `curl --compressed` so the workflow can inspect and decode
+the received bytes explicitly.
