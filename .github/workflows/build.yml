@@ -65,9 +65,45 @@ jobs:
           set -euo pipefail
           BASE="https://downloads.openwrt.org/releases/${V}/targets/${TARGET_PATH}"
           FILE="openwrt-imagebuilder-${V}-ramips-mt76x8.Linux-x86_64.tar.zst"
-          curl -fsSLO "${BASE}/${FILE}"
-          curl -fsSLO "${BASE}/sha256sums"
-          grep -F " ${FILE}" sha256sums | sha256sum -c -
+          # Download both files with redirects/retries and reject empty responses.
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
+            --output "${FILE}" "${BASE}/${FILE}"
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
+            --output sha256sums "${BASE}/sha256sums"
+
+          [[ -s "${FILE}" ]] || { echo "::error::ImageBuilder download is empty"; exit 1; }
+          [[ -s sha256sums ]] || { echo "::error::sha256sums download is empty"; exit 1; }
+
+          # Extract the checksum by exact filename. OpenWrt checksum entries may
+          # use either two spaces or the binary-file '*' marker.
+          EXPECTED="$(awk -v wanted="${FILE}" '
+            NF >= 2 {
+              name = $2
+              sub(/^\*/, "", name)
+              sub(/^.*\//, "", name)
+              if (name == wanted && $1 ~ /^[[:xdigit:]][[:xdigit:]]*$/ && length($1) == 64) {
+                print tolower($1)
+                exit
+              }
+            }
+          ' sha256sums)"
+
+          if [[ ! "${EXPECTED}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::No valid SHA-256 entry found for ${FILE} in ${BASE}/sha256sums"
+            echo "Available ImageBuilder checksum entries:"
+            grep -F 'openwrt-imagebuilder-' sha256sums | head -n 20 || true
+            echo "Checksum file preview:"
+            head -n 5 sha256sums || true
+            exit 1
+          fi
+
+          printf '%s  %s\n' "${EXPECTED}" "${FILE}" | sha256sum --check --status - || {
+            echo "::error::SHA-256 verification failed for ${FILE}"
+            exit 1
+          }
+          echo "ImageBuilder SHA-256 verified: ${EXPECTED}"
+
+          tar --zstd -tf "${FILE}" >/dev/null
           tar --zstd -xf "${FILE}"
           mv "${FILE%.tar.zst}" imagebuilder
 
