@@ -29,6 +29,7 @@ with tempfile.TemporaryDirectory() as tmp:
     check("amk-early.js" in h and h.index("amk-early.js") < h.index("</head>"), "header: early script inserted inside <head>")
     check('href="{{ media }}/favicon.png"' in h and "favicon.svg" not in h, "header: PNG favicon replaces SVG favicon")
     check('content="#2e1065"' in h, "header: theme-color is dark purple")
+    check('name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"' in h, "header: mobile viewport is defined so responsive breakpoints work")
     check("{{ media }}/cascade.css" in h, "header: still loads the theme cascade.css through {{ media }}")
     check("cbi.js" in h and "translations" in h, "header: upstream LuCI bootstrap scripts preserved")
     check("menu-almakhdhi" in f and f.index("menu-almakhdhi") < f.index("</body>"), "footer: sidebar loader inserted before </body>")
