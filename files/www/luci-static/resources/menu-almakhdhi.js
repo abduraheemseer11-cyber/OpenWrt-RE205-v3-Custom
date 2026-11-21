@@ -60,6 +60,11 @@ return baseclass.extend({
 		});
 	},
 
+	isMobile: function() {
+		var sw = (window.screen && window.screen.width) ? window.screen.width : window.innerWidth;
+		return !!(this.mq.matches || sw <= 700);
+	},
+
 	/* ---------- header ---------- */
 	decorateHeader: function() {
 		var self = this;
@@ -110,7 +115,7 @@ return baseclass.extend({
 		if (hostname) tools.insertBefore(E('span', { 'class': 'amk-hostname' }, hostname), tools.firstChild);
 
 		/* restore the desktop collapsed state */
-		if (!this.mq.matches && store('amk-nav') === 'collapsed')
+		if (!this.isMobile() && store('amk-nav') === 'collapsed')
 			document.body.classList.add('amk-nav-collapsed');
 		this.syncBurger();
 	},
@@ -180,7 +185,7 @@ return baseclass.extend({
 
 		aside.addEventListener('click', function(ev) {
 			var a = ev.target.closest ? ev.target.closest('a') : null;
-			if (a && self.mq.matches) self.setOpen(false);
+			if (a && self.isMobile()) self.setOpen(false);
 		});
 		document.addEventListener('keydown', function(ev) { if (ev.key === 'Escape') self.setOpen(false); });
 		window.addEventListener('resize', function() { document.body.classList.remove('amk-nav-open'); self.syncBurger(); });
@@ -190,12 +195,12 @@ return baseclass.extend({
 		document.body.classList.add('amk-ready');
 
 		var active = aside.querySelector('li.active > a');
-		if (active && active.scrollIntoView && !this.mq.matches) { try { active.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
+		if (active && active.scrollIntoView && !this.isMobile()) { try { active.scrollIntoView({ block: 'nearest' }); } catch (e) {} }
 	},
 
 	toggle: function() {
 		var b = document.body;
-		if (this.mq.matches) this.setOpen(!b.classList.contains('amk-nav-open'));
+		if (this.isMobile()) this.setOpen(!b.classList.contains('amk-nav-open'));
 		else {
 			var c = b.classList.toggle('amk-nav-collapsed');
 			store('amk-nav', c ? 'collapsed' : 'open');
@@ -211,7 +216,7 @@ return baseclass.extend({
 	syncBurger: function() {
 		if (!this.burger) return;
 		var b = document.body;
-		var expanded = this.mq.matches ? b.classList.contains('amk-nav-open') : !b.classList.contains('amk-nav-collapsed');
+		var expanded = this.isMobile() ? b.classList.contains('amk-nav-open') : !b.classList.contains('amk-nav-collapsed');
 		this.burger.setAttribute('aria-expanded', String(expanded));
 	},
 

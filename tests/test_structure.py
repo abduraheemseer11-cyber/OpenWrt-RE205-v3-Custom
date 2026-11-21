@@ -69,6 +69,12 @@ check(body.startswith("@import url('/luci-static/bootstrap/cascade.css');"), "CS
 check(body.count("{") == body.count("}") and body.count("(") == body.count(")"), "CSS braces and parentheses balanced")
 check(not re.search(r"https?://|@font-face|url\(\s*['\"]?//", css), "CSS has no external URLs or web fonts")
 check(all(re.search(p, css) for p in (r"--amk-header-bg:\s*#2e1065", r"\.amk-header", r"\.amk-sidebar", r"@media \(max-width: 900px\)", r'html\[dir="rtl"\]')), "CSS defines purple header, sidebar, responsive breakpoint and RTL rules")
+early = read("files/www/luci-static/almakhdhi/amk-early.js")
+menu = read("files/www/luci-static/resources/menu-almakhdhi.js")
+check("width=device-width" in early and "amk-mobile-viewport" in early, "early script enforces device viewport and detects phone screen size")
+check("orientationchange" in early, "early script refreshes responsive mode after rotation")
+check("isMobile: function()" in menu and "sw <= 700" in menu, "sidebar controller detects mobile hardware even with desktop-site viewport")
+check("100vw" in css and "html.amk-mobile-viewport" in css and "grid-template-columns: minmax(0, 1fr)" in css, "CSS forces full-width single-column phone layout")
 check("body.amk-ready #mainmenu" in css, "stock menu is hidden only after the sidebar is ready (fallback stays usable)")
 
 # ---- JS: no external loads, no heavy frameworks -------------------------------

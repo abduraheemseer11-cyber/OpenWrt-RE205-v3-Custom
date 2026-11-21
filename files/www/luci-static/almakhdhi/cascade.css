@@ -327,3 +327,144 @@ body.amk-login #maincontent { max-width: 460px; margin: 0 auto; padding: 24px 16
 .amk-login-brand { text-align: center; margin: 12px 0 18px; }
 .amk-login-brand h1 { margin: 10px 0 0; font-size: 1.5rem; color: var(--amk-text); }
 body.amk-login .cbi-map { background: var(--amk-surface); border: 1px solid var(--amk-border); border-radius: var(--amk-radius); box-shadow: var(--amk-shadow); padding: 16px; }
+
+
+/* ---------- responsive shell hardening (including Android desktop-site mode) ---------- */
+html, body {
+	width: 100% !important;
+	max-width: 100% !important;
+	min-width: 0 !important;
+	box-sizing: border-box;
+}
+body.amk-ready {
+	overflow-x: hidden !important;
+}
+body.amk-ready > header.amk-header {
+	position: fixed !important;
+	inset: 0 0 auto 0 !important;
+	width: 100% !important;
+	max-width: none !important;
+	min-width: 0 !important;
+	box-sizing: border-box !important;
+}
+body.amk-ready > header.amk-header > .fill,
+body.amk-ready > header.amk-header .fill,
+body.amk-ready > header.amk-header .container {
+	width: 100% !important;
+	max-width: none !important;
+	min-width: 0 !important;
+	box-sizing: border-box !important;
+}
+body.amk-ready .main,
+body.amk-ready .main-right {
+	position: relative !important;
+	inset: auto !important;
+	display: block !important;
+	float: none !important;
+	width: 100% !important;
+	max-width: none !important;
+	min-width: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	box-sizing: border-box !important;
+}
+body.amk-ready #maincontent {
+	display: block !important;
+	width: 100% !important;
+	max-width: 1180px !important;
+	min-width: 0 !important;
+	box-sizing: border-box !important;
+}
+
+/* A phone may report a desktop-sized layout viewport when "Desktop site" is
+ * enabled. amk-early.js detects the physical screen and adds this class. */
+html.amk-mobile-viewport body.amk-ready {
+	padding-inline-start: 0 !important;
+	padding-top: var(--amk-header-h) !important;
+}
+html.amk-mobile-viewport body.amk-ready.amk-nav-collapsed {
+	padding-inline-start: 0 !important;
+}
+html.amk-mobile-viewport body.amk-ready > header.amk-header {
+	left: 0 !important;
+	right: 0 !important;
+	width: 100vw !important;
+}
+html.amk-mobile-viewport body.amk-ready #maincontent {
+	width: 100% !important;
+	max-width: none !important;
+	margin: 0 !important;
+	padding: 14px 12px 32px !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-sidebar {
+	top: var(--amk-header-h) !important;
+	bottom: 0 !important;
+	width: min(84vw, 320px) !important;
+	max-width: 320px !important;
+	transform: translateX(-105%) !important;
+}
+html[dir="rtl"].amk-mobile-viewport body.amk-ready .amk-sidebar {
+	transform: translateX(105%) !important;
+}
+html.amk-mobile-viewport body.amk-ready.amk-nav-open .amk-sidebar {
+	transform: translateX(0) !important;
+}
+html[dir="rtl"].amk-mobile-viewport body.amk-ready.amk-nav-open .amk-sidebar {
+	transform: translateX(0) !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-overlay {
+	display: none;
+}
+html.amk-mobile-viewport body.amk-ready.amk-nav-open .amk-overlay {
+	display: block !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-grid-4,
+html.amk-mobile-viewport body.amk-ready .amk-grid-3 {
+	grid-template-columns: minmax(0, 1fr) !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-card {
+	width: 100%;
+	min-width: 0;
+	padding: 14px;
+}
+html.amk-mobile-viewport body.amk-ready .amk-table-wrap {
+	max-width: 100%;
+	overflow-x: auto;
+}
+html.amk-mobile-viewport body.amk-ready .amk-header .container {
+	display: flex !important;
+	flex-wrap: nowrap !important;
+	gap: 8px !important;
+	padding-inline: 10px !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-brand {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: .95rem;
+}
+html.amk-mobile-viewport body.amk-ready .amk-brand-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+html.amk-mobile-viewport body.amk-ready .amk-logo {
+	width: 34px;
+	height: 34px;
+}
+html.amk-mobile-viewport body.amk-ready .amk-logo img {
+	width: 30px;
+	height: 30px;
+}
+html.amk-mobile-viewport body.amk-ready .amk-tools {
+	flex: none;
+	gap: 4px;
+}
+html.amk-mobile-viewport body.amk-ready .amk-tool {
+	padding: 4px 6px;
+	font-size: .75rem;
+}
+html.amk-mobile-viewport body.amk-ready .amk-hostname {
+	display: none !important;
+}
+html.amk-mobile-viewport body.amk-ready .amk-step-name {
+	display: none;
+}
