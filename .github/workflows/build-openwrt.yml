@@ -53,12 +53,33 @@ jobs:
             (cd /tmp/alameer-theme-ipk && ar x "$IMAGEBUILDER/$ipk")
           else
             # ImageBuilder may ship package indexes but not the .ipk payload itself.
-            feed="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/packages/mipsel_24kc/luci"
-            curl --fail --location "$feed/Packages.gz" -o /tmp/alameer-luci-Packages.gz
-            filename="$(gzip -dc /tmp/alameer-luci-Packages.gz | awk 'BEGIN { RS=""; FS="\\n" } $1 == "Package: luci-theme-bootstrap" { for (i=1; i<=NF; i++) if ($i ~ /^Filename: /) { sub(/^Filename: /, "", $i); print $i; exit } }')"
-            test -n "$filename"
-            curl --fail --location "$feed/$filename" -o /tmp/luci-theme-bootstrap.ipk
-            (cd /tmp/alameer-theme-ipk && ar x /tmp/luci-theme-bootstrap.ipk)
+            # 24.10 packages use the rolling packages-24.10 feed path, not
+            # releases/24.10.8/packages/ (which is not the LuCI feed location).
+            feed="https://downloads.openwrt.org/releases/packages-24.10/mipsel_24kc/luci"
+            index=/tmp/alameer-luci-Packages.gz
+            ipk=/tmp/luci-theme-bootstrap.ipk
+            curl --fail --location --retry 3 --retry-all-errors "$feed/Packages.gz" -o "$index"
+            gzip -t "$index"
+            filename="$(gzip -dc "$index" | awk 'BEGIN { RS=""; FS="\n" } $1 == "Package: luci-theme-bootstrap" { for (i=1; i<=NF; i++) if ($i ~ /^Filename: /) { sub(/^Filename: /, "", $i); print $i; exit } }')"
+            if [ -z "$filename" ]; then
+              echo "luci-theme-bootstrap was not found in $feed/Packages.gz" >&2
+              exit 1
+            fi
+            case "$filename" in
+              /*|*..*) echo "Unsafe package path from feed index: $filename" >&2; exit 1 ;;
+            esac
+            curl --fail --location --retry 3 --retry-all-errors "$feed/$filename" -o "$ipk"
+            echo "Downloaded package: $filename"
+            file "$ipk"
+            # An .ipk is an ar archive; reject HTML/error bodies before extraction.
+            if ! ar t "$ipk" >/tmp/alameer-ipk-members.txt 2>/tmp/alameer-ipk-ar-error || ! grep -q '^debian-binary$' /tmp/alameer-ipk-members.txt; then
+              echo "Downloaded luci-theme-bootstrap is not a valid .ipk ar archive." >&2
+              cat /tmp/alameer-ipk-ar-error >&2 || true
+              echo "First bytes of response:" >&2
+              head -c 300 "$ipk" >&2 || true
+              exit 1
+            fi
+            (cd /tmp/alameer-theme-ipk && ar x "$ipk")
           fi
           data="$(find /tmp/alameer-theme-ipk -maxdepth 1 -type f -name 'data.tar*' -print -quit)"
           test -n "$data"

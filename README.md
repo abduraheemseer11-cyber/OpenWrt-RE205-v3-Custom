@@ -58,7 +58,7 @@ To publish a GitHub Release instead of only an Actions artifact, push a version 
 └── README.md
 ```
 
-The build job extracts the original 24.10 Bootstrap `header.ut` from the official `luci-theme-bootstrap` package and injects the Alameer CSS/JS asset references into it. This preserves LuCI's native page shell instead of replacing its session, routing or view bootstrap logic with an incompatible hand-written template.
+The build job extracts the original Bootstrap `header.ut` from the official `luci-theme-bootstrap` package and injects the Alameer CSS/JS asset references into it. If ImageBuilder does not include the package payload, CI retrieves it from the OpenWrt 24.10 package feed at `releases/packages-24.10/mipsel_24kc/luci/` (not the per-point-release `releases/24.10.8/packages/` path), validates that the download is a real `ar` archive, and only then extracts it. This preserves LuCI's native page shell instead of replacing its session, routing or view bootstrap logic with an incompatible hand-written template.
 
 ## Package and size policy
 
