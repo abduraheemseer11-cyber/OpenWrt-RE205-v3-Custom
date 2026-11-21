@@ -32,17 +32,19 @@ def patch_header(text):
     if "cascade.css" not in text:
         fail("header.ut: no cascade.css reference - upstream template layout changed")
 
-    # LuCI's upstream template may omit the viewport declaration. Without it,
-    # mobile browsers use a wide virtual layout viewport and our mobile media
-    # queries never activate, making the complete desktop shell appear tiny.
-    if not re.search(r'<meta\s+name=["\']viewport["\']', text, re.I):
-        viewport = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
-        if re.search(r'<meta\s+charset=', text, re.I):
-            text = re.sub(r'(<meta\s+charset=[^>]+>\s*)', r'\1' + viewport, text, count=1, flags=re.I)
-        else:
-            text = text.replace("</head>", viewport + "</head>", 1)
+    # Always enforce a device-width viewport. Merely checking whether a
+    # viewport tag exists is insufficient: upstream uses initial-scale=1.0,
+    # which can leave mobile browsers with a wide virtual layout viewport.
+    viewport = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+    if re.search(r'<meta\s+name=["\']viewport["\'][^>]*>', text, re.I):
+        text = re.sub(r'<meta\s+name=["\']viewport["\'][^>]*>', viewport, text, count=1, flags=re.I)
+    elif re.search(r'<meta\s+charset=', text, re.I):
+        text = re.sub(r'(<meta\s+charset=[^>]+>\s*)', r'\1' + viewport + "\n", text, count=1, flags=re.I)
+    else:
+        text = text.replace("</head>", viewport + "\n</head>", 1)
 
-    text = text.replace("</head>", EARLY + "</head>", 1)
+    if 'amk-early.js' not in text:
+        text = text.replace("</head>", EARLY + "</head>", 1)
     # purple browser chrome on phones (optional, tolerant)
     text = re.sub(r'(<meta\s+name="theme-color"\s+content=")[^"]*(")', r"\g<1>#2e1065\g<2>", text)
     # drop the stock SVG favicon so ours (inserted above) is used
@@ -57,8 +59,24 @@ def patch_footer(text):
     return text[:idx] + LOADER + text[idx:]
 
 
+def patch_menu_bootstrap(src, dst):
+    text = src.read_text(encoding="utf-8")
+    # AlMakhdhi provides its own responsive sidebar. Keep the upstream
+    # Bootstrap menu untouched for other themes, but don't let it create a
+    # second legacy navigation bar when this theme is active.
+    guard = "if (document.documentElement.hasAttribute('data-amk-theme')) return;"
+    if guard not in text:
+        marker = "'use strict';"
+        if marker not in text:
+            fail("menu-bootstrap.js: expected strict-mode anchor not found")
+        text = text.replace(marker, marker + "\n" + guard, 1)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(text, encoding="utf-8")
+    print("  wrote %s" % dst)
+
+
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 5):
         fail(__doc__)
     src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
     if not src.is_dir():
@@ -80,6 +98,12 @@ def main():
             text = patch_footer(text)
         (dst / p.name).write_text(text, encoding="utf-8")
         print("  wrote %s/%s" % (dst, p.name))
+
+    if len(sys.argv) == 5:
+        menu_src, menu_dst = pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+        if not menu_src.is_file():
+            fail("menu-bootstrap.js not found: %s" % menu_src)
+        patch_menu_bootstrap(menu_src, menu_dst)
 
 
 if __name__ == "__main__":

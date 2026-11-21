@@ -468,3 +468,25 @@ html.amk-mobile-viewport body.amk-ready .amk-hostname {
 html.amk-mobile-viewport body.amk-ready .amk-step-name {
 	display: none;
 }
+
+/* ---------- mobile viewport and full-width content safeguards ---------- */
+@media (max-width: 900px) {
+	html, body { width: 100% !important; min-width: 0 !important; max-width: 100% !important; }
+	body.amk-ready, body.amk-ready.amk-nav-collapsed { padding-inline-start: 0 !important; }
+	body.amk-ready #maincontent, body #maincontent {
+		width: 100% !important; max-width: 100% !important;
+		margin-inline: 0 !important; padding: 14px 12px 32px !important;
+		box-sizing: border-box !important;
+	}
+	.amk-sidebar { max-width: 84vw; }
+	#maincontent > * { max-width: 100%; box-sizing: border-box; }
+	table { max-width: 100%; }
+}
+
+@media (max-width: 480px) {
+	:root { --amk-header-h: 52px; }
+	body.amk-ready #maincontent, body #maincontent { padding: 10px 9px 28px !important; }
+	.amk-brand { font-size: .95rem; }
+	.amk-logo { width: 36px; height: 36px; }
+	.amk-logo img { width: 32px; height: 32px; }
+}

@@ -82,3 +82,15 @@ bash tests/run_tests.sh        # يحتاج bash وpython3 وnode فقط، دو�
 ### ما الذي لم يُختبر
 
 لم يُشغَّل الفيرموير على راوتر حقيقي ولم يُبنَ فعلياً في بيئة التطوير هذه (لا إنترنت). **لم تُفحص** القوالب الحقيقية لـ LuCI ولا العرض البصري في المتصفح ولا تطبيق uci/ubus الحقيقي. هذه الأمور يتحقق منها سير عمل GitHub (حتى مرحلة البناء) ثم تجربتك على الجهاز. أرسل لي لقطة شاشة أو سجل الخطأ وأضبط التصميم.
+
+
+## Mobile layout correction (November 2026)
+
+The mobile correction is applied during the GitHub Actions build, against the exact LuCI files downloaded for the selected OpenWrt release:
+
+- `scripts/patch_theme.py` now replaces any existing viewport declaration with `width=device-width, initial-scale=1, viewport-fit=cover`, rather than leaving upstream's `initial-scale=1.0` declaration untouched.
+- `scripts/prepare-theme.sh` derives `header.ut`, `footer.ut`, and the other LuCI templates from the release's upstream `luci-theme-bootstrap` package. It also creates a patched `files/www/luci-static/resources/menu-bootstrap.js` from that same upstream package.
+- `files/www/luci-static/almakhdhi/cascade.css` contains additional phone-width rules so the content area uses the full device width and the sidebar remains an overlay.
+- The stock `menu-bootstrap.js` is left functional for other themes, but its legacy top menu is skipped while the AlMakhdhi theme is active (the AlMakhdhi sidebar supplies navigation).
+
+`header.ut`, `footer.ut`, and the generated `menu-bootstrap.js` are intentionally derived during CI because their upstream LuCI implementation can change between OpenWrt releases. The generated files are present in the build workspace and included in the firmware overlay; they are not maintained as stale copies in the source tree.

@@ -13,8 +13,8 @@ def check(cond, msg):
         fails.append(msg)
 
 
-def run(src, dst):
-    return subprocess.run([sys.executable, str(PATCH), str(src), str(dst)], capture_output=True, text=True)
+def run(src, dst, *extra):
+    return subprocess.run([sys.executable, str(PATCH), str(src), str(dst), *map(str, extra)], capture_output=True, text=True)
 
 
 with tempfile.TemporaryDirectory() as tmp:
@@ -34,6 +34,17 @@ with tempfile.TemporaryDirectory() as tmp:
     check("cbi.js" in h and "translations" in h, "header: upstream LuCI bootstrap scripts preserved")
     check("menu-almakhdhi" in f and f.index("menu-almakhdhi") < f.index("</body>"), "footer: sidebar loader inserted before </body>")
     check("menu-bootstrap" in f, "footer: stock menu loader preserved (fallback)")
+
+    # The stock menu module is retained for other themes, but the AlMakhdhi
+    # theme must not render a second legacy top navigation beside its sidebar.
+    menu_src = tmp / "menu-bootstrap.js"
+    menu_dst = tmp / "resources" / "menu-bootstrap.js"
+    menu_src.write_text("'use strict';\nreturn {};\n")
+    r = run(FIX, tmp / "out-menu", menu_src, menu_dst)
+    check(r.returncode == 0, "patcher also accepts and writes the upstream menu module")
+    if menu_dst.exists():
+        menu_text = menu_dst.read_text()
+        check("hasAttribute('data-amk-theme')" in menu_text, "menu-bootstrap: legacy menu suppressed only for AlMakhdhi theme")
     check("themes/almakhdhi/header" in s and "themes/bootstrap" not in s, "sysauth: template paths rewritten to the new theme")
     for name, text in (("header", h), ("footer", f), ("sysauth", s)):
         check(text.count("{%") == text.count("%}") and text.count("{{") == text.count("}}"), name + ": ucode delimiters stay balanced")

@@ -58,5 +58,6 @@ grep -q "dispatchpath" "${MENU}"        || echo "WARNING: menu-bootstrap.js does
 
 OUT="${ROOT}/files/usr/share/ucode/luci/template/themes/almakhdhi"
 rm -rf "${OUT}"
-python3 "${ROOT}/scripts/patch_theme.py" "${TPL}" "${OUT}"
+MENU_OUT="${ROOT}/files/www/luci-static/resources/menu-bootstrap.js"
+python3 "${ROOT}/scripts/patch_theme.py" "${TPL}" "${OUT}" "${MENU}" "${MENU_OUT}"
 echo "Theme templates generated in ${OUT}"
