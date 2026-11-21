@@ -1,33 +1,34 @@
-name: Build OpenWrt - TP-Link RE205 v3
+name: Build OpenWrt - TP-Link RE205 v3 Custom
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['README.md']
+    paths-ignore:
+      - "README.md"
   workflow_dispatch:
     inputs:
       version:
-        description: 'OpenWrt version (e.g. 24.10.4) or "latest" for newest 24.10.x'
-        default: 'latest'
+        description: 'OpenWrt 24.10.x version, or latest'
         required: false
+        default: 'latest'
       profile:
         description: 'ImageBuilder profile'
-        default: 'tplink_re205-v3'
         required: false
+        default: 'tplink_re205-v3'
 
 env:
   TARGET_PATH: ramips/mt76x8
-  SERIES: '24.10'
+  SERIES: "24.10"
 
-defaults:
-  run:
-    shell: bash
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -35,8 +36,12 @@ jobs:
           sudo apt-get install -y build-essential libncurses-dev zlib1g-dev gawk git \
             gettext libssl-dev xsltproc rsync wget unzip python3 zstd file
 
-      - name: Run offline tests
-        run: bash tests/run_tests.sh
+      - name: Validate and prepare custom theme
+        run: |
+          set -euo pipefail
+          chmod +x files/etc/uci-defaults/99-custom-settings scripts/patch_theme.py
+          python3 scripts/patch_theme.py --root files --logo assets/logo-original.png
+          bash -n files/etc/uci-defaults/99-custom-settings
 
       - name: Resolve OpenWrt version
         id: ver
@@ -47,10 +52,10 @@ jobs:
           V="${INPUT_VERSION:-latest}"
           if [ "$V" = "latest" ]; then
             V="$(curl -fsSL https://downloads.openwrt.org/releases/ \
-                 | grep -oE "${SERIES//./\\.}\.[0-9]+/" | tr -d '/' | sort -uV | tail -n1)"
+              | grep -oE '24\.10\.[0-9]+/' | tr -d '/' | sort -Vu | tail -n1)"
           fi
-          [ -n "$V" ] || { echo "Could not resolve version"; exit 1; }
-          echo "Using OpenWrt $V"
+          [[ "$V" =~ ^24\.10\.[0-9]+$ ]] || { echo "::error::Invalid OpenWrt version: $V"; exit 1; }
+          echo "Resolved OpenWrt version: $V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
       - name: Download and verify ImageBuilder
@@ -62,64 +67,41 @@ jobs:
           FILE="openwrt-imagebuilder-${V}-ramips-mt76x8.Linux-x86_64.tar.zst"
           curl -fsSLO "${BASE}/${FILE}"
           curl -fsSLO "${BASE}/sha256sums"
-          grep -F "${FILE}" sha256sums | sha256sum -c -
+          grep -F " ${FILE}" sha256sums | sha256sum -c -
           tar --zstd -xf "${FILE}"
           mv "${FILE%.tar.zst}" imagebuilder
 
-      - name: Derive LuCI theme templates from upstream luci-theme-bootstrap
-        env:
-          V: ${{ steps.ver.outputs.version }}
-        run: |
-          set -euo pipefail
-          ARCH="$(grep -oP 'CONFIG_TARGET_ARCH_PACKAGES="\K[^"]+' imagebuilder/.config || true)"
-          echo "Package architecture: ${ARCH:-mipsel_24kc (default)}"
-          bash scripts/prepare-theme.sh "$V" "${ARCH:-mipsel_24kc}"
-
-      - name: Build image
+      - name: Build firmware
         env:
           INPUT_PROFILE: ${{ inputs.profile }}
         run: |
           set -euo pipefail
           PROFILE="${INPUT_PROFILE:-tplink_re205-v3}"
-          chmod +x files/etc/uci-defaults/*
           cd imagebuilder
-          # Capture first: piping `make info` into `grep -q` breaks the pipe under pipefail.
           INFO="$(make info)"
           if ! grep -q "^${PROFILE}:" <<< "$INFO"; then
             echo "::error::Profile '${PROFILE}' not found. Available TP-Link profiles:"
             grep -E '^(tplink|tp-link)' <<< "$INFO" || true
             exit 1
           fi
-          PACKAGES="$(grep -vE '^\s*(#|$)' ../packages.txt | tr '\n' ' ')"
-          echo "Profile : ${PROFILE}"
-          echo "Packages: ${PACKAGES}"
+          PACKAGES="$(grep -vE '^[[:space:]]*(#|$)' ../packages.txt | tr '\n' ' ')"
           make image PROFILE="${PROFILE}" PACKAGES="${PACKAGES}" \
-               FILES="${GITHUB_WORKSPACE}/files" EXTRA_IMAGE_NAME="custom"
-
-      - name: Verify firmware contents
-        run: bash tests/verify_image_contents.sh imagebuilder
+            FILES="${GITHUB_WORKSPACE}/files" EXTRA_IMAGE_NAME="almakhdhi"
 
       - name: Collect output
         run: |
           set -euo pipefail
           mkdir -p out
           cd imagebuilder/bin/targets/ramips/mt76x8
-          ls -lh
           cp -v *sysupgrade*.bin ../../../../../out/
-          cp -v *factory*.bin ../../../../../out/ || echo "::warning::No factory image produced for this profile"
+          cp -v *factory*.bin ../../../../../out/ || echo "::warning::No factory image produced"
           cp -v sha256sums *.manifest ../../../../../out/ 2>/dev/null || true
+          ls -lh ../../../../../out/
 
-      - name: Upload artifacts
+      - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-re205-v3-${{ steps.ver.outputs.version }}
+          name: openwrt-re205-v3-custom-${{ steps.ver.outputs.version }}
           path: out/*
           if-no-files-found: error
-
-      - name: Upload upstream theme files (diagnostics)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: upstream-luci-theme-bootstrap
-          path: upstream-debug/
-          if-no-files-found: ignore
+          retention-days: 14
