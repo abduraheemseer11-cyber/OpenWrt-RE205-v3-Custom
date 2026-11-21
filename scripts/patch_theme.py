@@ -31,6 +31,17 @@ def patch_header(text):
         fail("header.ut: '</head>' anchor not found - upstream template layout changed")
     if "cascade.css" not in text:
         fail("header.ut: no cascade.css reference - upstream template layout changed")
+
+    # LuCI's upstream template may omit the viewport declaration. Without it,
+    # mobile browsers use a wide virtual layout viewport and our mobile media
+    # queries never activate, making the complete desktop shell appear tiny.
+    if not re.search(r'<meta\s+name=["\']viewport["\']', text, re.I):
+        viewport = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'
+        if re.search(r'<meta\s+charset=', text, re.I):
+            text = re.sub(r'(<meta\s+charset=[^>]+>\s*)', r'\1' + viewport, text, count=1, flags=re.I)
+        else:
+            text = text.replace("</head>", viewport + "</head>", 1)
+
     text = text.replace("</head>", EARLY + "</head>", 1)
     # purple browser chrome on phones (optional, tolerant)
     text = re.sub(r'(<meta\s+name="theme-color"\s+content=")[^"]*(")', r"\g<1>#2e1065\g<2>", text)
