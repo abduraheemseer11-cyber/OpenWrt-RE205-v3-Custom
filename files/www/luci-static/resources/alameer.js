@@ -1,119 +1,108 @@
-/* AlMakhdhi SoftWare — LuCI navigation shell */
+/* AlMakhdhi SoftWare — LuCI navigation shell (OpenWrt 24.10 Bootstrap)
+ * Moves the top-level menu (Status / System / Network / Log out) that LuCI
+ * renders into #modemenu, plus all sub-pages, into a slide-out sidebar. */
 (()=>{
   'use strict';
+  const T=s=>(typeof _==='function'?_(s):s);
+  const el=(tag,cls,txt)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(txt!=null)n.textContent=txt;return n};
+  const url=(...p)=>(window.L&&L.url)?L.url.apply(L,p):'/cgi-bin/luci/'+p.join('/');
+  const dpath=()=>((window.L&&L.env&&L.env.dispatchpath)||[]);
+
+  const isLeaf=n=>{const t=n&&n.action&&n.action.type;return !!t&&t!=='firstchild'};
+
+  function renderLevel(ui,node,path,depth){
+    const ul=el('ul','am-list am-l'+depth);
+    const kids=ui.menu.getChildren(node);
+    kids.forEach(k=>{
+      const p=path.concat(k.name);
+      const sub=(!isLeaf(k)&&depth<3)?ui.menu.getChildren(k):[];
+      const li=el('li','am-item');
+      const active=dpath().slice(0,p.length).join('/')===p.join('/');
+      if(sub.length){
+        li.classList.add('am-group');
+        const b=el('button','am-gbtn',T(k.title));b.type='button';
+        b.setAttribute('aria-expanded',active?'true':'false');
+        const car=el('span','am-caret','▾');b.appendChild(car);
+        b.addEventListener('click',()=>{const o=li.classList.toggle('am-open');b.setAttribute('aria-expanded',o?'true':'false')});
+        li.appendChild(b);
+        li.appendChild(renderLevel(ui,k,p,depth+1));
+        if(active)li.classList.add('am-open','am-active');
+      }else{
+        const a=el('a','am-link',T(k.title));a.href=url.apply(null,p);
+        if(active)li.classList.add('am-active');
+        li.appendChild(a);
+      }
+      ul.appendChild(li);
+    });
+    return ul;
+  }
+
+  function findTop(tree){
+    if(!tree||!tree.children)return null;
+    if(tree.children.admin)return {node:tree.children.admin,path:['admin']};
+    return {node:tree,path:[]};
+  }
+
+  function fromDom(nav,stock){
+    /* Fallback: reuse links LuCI already rendered in the stock menus. */
+    const ul=el('ul','am-list am-l1');
+    stock.forEach(root=>root.querySelectorAll('a[href]').forEach(a=>{
+      if(a.getAttribute('href')==='#')return;
+      const li=el('li','am-item'),l=el('a','am-link',a.textContent.trim());l.href=a.href;li.appendChild(l);ul.appendChild(li);
+    }));
+    nav.appendChild(ul);
+  }
+
   const start=()=>{
-    if(document.getElementById('alameer-shell')) return;
-
-    const shell=document.createElement('div');
-    shell.id='alameer-shell';
-
-    const bar=document.createElement('header');
-    bar.className='alameer-topbar';
-    const toggle=document.createElement('button');
-    toggle.className='alameer-toggle';
-    toggle.type='button';
-    toggle.setAttribute('aria-label','Open navigation');
-    toggle.setAttribute('aria-expanded','false');
-    for(let i=0;i<3;i++){
-      const span=document.createElement('span');
-      toggle.appendChild(span);
-    }
-
-    const brand=document.createElement('div');
-    brand.className='alameer-brand';
-    const logo=document.createElement('img');
-    logo.src='/luci-static/resources/logo.png';
-    logo.alt='Alameer Software';
-    logo.width=42; logo.height=42;
-    const name=document.createElement('strong');
-    name.textContent='AlMakhdhi SoftWare';
-    brand.append(logo,name);
+    if(document.getElementById('alameer-shell'))return;
+    const shell=el('div');shell.id='alameer-shell';
+    const bar=el('header','alameer-topbar');
+    const toggle=el('button','alameer-toggle');toggle.type='button';
+    toggle.setAttribute('aria-label','فتح القائمة الجانبية');toggle.setAttribute('aria-expanded','false');
+    for(let i=0;i<3;i++)toggle.appendChild(document.createElement('span'));
+    const brand=el('div','alameer-brand');
+    const logo=el('img');logo.src='/luci-static/resources/logo.png';logo.alt='Alameer Software';logo.width=42;logo.height=42;
+    brand.append(logo,el('strong',null,'AlMakhdhi SoftWare'));
     bar.append(toggle,brand);
 
-    const shade=document.createElement('button');
-    shade.className='alameer-shade';
-    shade.type='button';
-    shade.setAttribute('aria-label','Close navigation');
+    /* Keep LuCI's "unsaved changes / apply" indicator visible. */
+    const ind=document.getElementById('indicators');
+    if(ind){ind.classList.add('am-indicators');bar.appendChild(ind)}
 
-    const drawer=document.createElement('aside');
-    drawer.className='alameer-drawer';
-    drawer.id='alameer-drawer';
-    drawer.setAttribute('aria-label','Router settings navigation');
-
-    const head=document.createElement('div');
-    head.className='alameer-drawer-head';
-    const title=document.createElement('strong');
-    title.textContent='لوحة التحكم';
-    const close=document.createElement('button');
-    close.className='alameer-close';
-    close.type='button';
-    close.textContent='×';
-    close.setAttribute('aria-label','Close navigation');
-    head.append(title,close);
-
-    const nav=document.createElement('nav');
-    nav.className='alameer-nav';
-    nav.setAttribute('aria-label','OpenWrt navigation');
-
-    /*
-     * LuCI 24.10 may expose its navigation as #mainmenu or as a
-     * Bootstrap navbar list, depending on the exact theme package.
-     * Move the original navigation node (not copied links) so LuCI's
-     * own click handlers, dropdowns and logout URL remain intact.
-     */
-    const mainmenu=document.querySelector('#mainmenu');
-    if(mainmenu) {
-      nav.appendChild(mainmenu);
-    } else {
-      const candidates=[
-        ...document.querySelectorAll('.navbar ul.navbar-nav'),
-        ...document.querySelectorAll('.navbar ul.nav'),
-        ...document.querySelectorAll('nav[role="navigation"] > ul')
-      ];
-      const unique=candidates.filter((node,index)=>
-        candidates.indexOf(node)===index &&
-        !candidates.some(other=>other!==node && other.contains(node))
-      );
-      unique.forEach(node=>nav.appendChild(node));
-    }
-
-    if(!nav.children.length) {
-      const note=document.createElement('p');
-      note.className='alameer-menu-note';
-      note.textContent='تعذر العثور على روابط القائمة الأصلية. أعد تحميل الصفحة.';
-      nav.appendChild(note);
-    }
-
-    drawer.append(head,nav);
-    shell.append(bar,shade,drawer);
+    const shade=el('button','alameer-shade');shade.type='button';shade.setAttribute('aria-label','إغلاق القائمة');
+    const drawer=el('aside','alameer-drawer');drawer.id='alameer-drawer';drawer.setAttribute('aria-label','قائمة إعدادات الراوتر');
+    const head=el('div','alameer-drawer-head');
+    const close=el('button','alameer-close','×');close.type='button';close.setAttribute('aria-label','إغلاق القائمة');
+    head.append(el('strong',null,'لوحة التحكم'),close);
+    const nav=el('nav','alameer-nav');nav.setAttribute('aria-label','OpenWrt');
+    const loading=el('p','alameer-menu-note','...');nav.appendChild(loading);
+    drawer.append(head,nav);shell.append(bar,shade,drawer);
     document.body.insertBefore(shell,document.body.firstChild);
     document.body.classList.add('alameer-ui');
 
-    /* Hide the remaining stock navbar; the real menu is now in drawer. */
-    document.querySelectorAll('.navbar').forEach(el=>{
-      if(!drawer.contains(el)) el.classList.add('alameer-native-navbar');
-    });
+    const stock=Array.from(document.querySelectorAll('#modemenu,#mainmenu'));
 
-    const setOpen=open=>{
-      document.body.classList.toggle('alameer-drawer-open',open);
-      toggle.setAttribute('aria-expanded',open?'true':'false');
-      drawer.setAttribute('aria-hidden',open?'false':'true');
-      shade.setAttribute('aria-hidden',open?'false':'true');
+    const fill=()=>{
+      const fb=()=>{nav.textContent='';
+        if(stock.some(s=>s.querySelector('a')))fromDom(nav,stock);
+        else nav.appendChild(el('p','alameer-menu-note','تعذر تحميل القائمة. أعد تحميل الصفحة.'))};
+      if(!(window.L&&L.require)){fb();return}
+      L.require('ui').then(ui=>ui.menu.load().then(tree=>{
+        const top=findTop(tree);
+        if(!top||!top.node){fb();return}
+        const ul=renderLevel(ui,top.node,top.path,1);
+        if(!ul.children.length){fb();return}
+        nav.textContent='';nav.appendChild(ul);
+      })).catch(fb);
     };
-    toggle.addEventListener('click',()=>setOpen(!document.body.classList.contains('alameer-drawer-open')));
-    close.addEventListener('click',()=>setOpen(false));
-    shade.addEventListener('click',()=>setOpen(false));
-    document.addEventListener('keydown',event=>{
-      if(event.key==='Escape') setOpen(false);
-    });
-    nav.addEventListener('click',event=>{
-      if(event.target.closest('a') && !event.target.closest('.dropdown-toggle'))
-        setOpen(false);
-    });
-  };
+    fill();
 
-  if(document.readyState==='loading')
-    document.addEventListener('DOMContentLoaded',start,{once:true});
-  else
-    start();
+    const setOpen=o=>{document.body.classList.toggle('alameer-drawer-open',o);
+      toggle.setAttribute('aria-expanded',o?'true':'false');
+      drawer.setAttribute('aria-hidden',o?'false':'true');shade.setAttribute('aria-hidden',o?'false':'true')};
+    toggle.addEventListener('click',()=>setOpen(!document.body.classList.contains('alameer-drawer-open')));
+    close.addEventListener('click',()=>setOpen(false));shade.addEventListener('click',()=>setOpen(false));
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')setOpen(false)});
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();

@@ -15,6 +15,8 @@ env:
   SUBTARGET: "mt76x8"
   PROFILE: "tplink_re205-v3"
   MAX_IMAGE_BYTES: "6000000"
+  # Experimental: build a custom regulatory.db containing country "ZZ" (see README).
+  SUPER_REGDB: "false"
 
 jobs:
   build:
@@ -33,8 +35,11 @@ jobs:
           test -f files/www/luci-static/resources/alameer.js
           test -f files/www/luci-static/resources/logo.png
           test -f files/usr/bin/alameer-reset-wireless
-          test -f files/usr/bin/alameer-device-capabilities
-          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless scripts/inject-theme-assets.sh
+          for f in files/usr/libexec/rpcd/alameer files/usr/sbin/alameer-loopguard files/usr/sbin/alameer-cpufreq files/etc/init.d/alameer-loopguard files/etc/init.d/alameer-cpufreq files/etc/config/alameer files/usr/share/luci/menu.d/luci-app-alameer.json files/usr/share/rpcd/acl.d/luci-app-alameer.json; do
+            test -f "$f" || { echo "Missing $f" >&2; exit 1; }
+          done
+          for f in files/www/luci-static/resources/view/alameer/*.js; do node --check "$f" 2>/dev/null || true; done
+          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless scripts/inject-theme-assets.sh scripts/*.sh
 
       - name: Install build utilities
         run: |
@@ -144,18 +149,52 @@ jobs:
           "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh" files
           test -f files/etc/uci-defaults/99-custom-config
           test -f files/usr/bin/alameer-reset-wireless
-          test -f files/usr/bin/alameer-device-capabilities
           test -f "$GITHUB_WORKSPACE/scripts/inject-theme-assets.sh"
-          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless files/usr/bin/alameer-device-capabilities
+          chmod 0755 files/etc/uci-defaults/99-custom-config files/usr/bin/alameer-reset-wireless \
+            files/usr/libexec/rpcd/alameer files/usr/sbin/alameer-loopguard files/usr/sbin/alameer-cpufreq \
+            files/etc/init.d/alameer-loopguard files/etc/init.d/alameer-cpufreq
 
-      - name: Build device firmware
+      - name: Optional custom regulatory database (Super Channel "ZZ")
+        if: env.SUPER_REGDB == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GITHUB_WORKSPACE/scripts/build-regdb.sh" "$IMAGEBUILDER/files"
+
+      - name: Build device firmware (with automatic size fallback)
         shell: bash
         run: |
           set -euo pipefail
           cd "$IMAGEBUILDER"
-          PACKAGES="luci-base luci-mod-admin-full luci-theme-bootstrap uhttpd uhttpd-mod-ubus -ppp -ppp-mod-pppoe -odhcpd-ipv6only -ip6tables -kmod-ip6tables -luci-app-firewall"
-          make image PROFILE="$PROFILE" PACKAGES="$PACKAGES" FILES=files
+          BASE="luci-base luci-mod-admin-full luci-theme-bootstrap uhttpd uhttpd-mod-ubus -ppp -ppp-mod-pppoe -odhcpd-ipv6only -ip6tables -kmod-ip6tables -luci-app-firewall"
+          # Tier 1: everything (mesh + extender + watchdog + analyzer tools)
+          FULL="$BASE iw relayd kmod-batman-adv -wpad-basic-mbedtls wpad-mesh-mbedtls watchcat luci-app-watchcat"
+          # Tier 2: no mesh (batman-adv/wpad-mesh dropped to save flash)
+          LITE="$BASE iw relayd"
+          # Tier 3: analyzer only
+          MIN="$BASE iw"
           mkdir -p "$GITHUB_WORKSPACE/dist"
+          built=""
+          for tier in FULL LITE MIN; do
+            PK="${!tier}"
+            echo "::group::Trying package tier $tier"
+            rm -rf bin
+            if make image PROFILE="$PROFILE" PACKAGES="$PK" FILES=files; then
+              over=0
+              while IFS= read -r img; do
+                bytes="$(stat -c %s "$img")"; echo "$img: $bytes bytes"
+                (( bytes >= MAX_IMAGE_BYTES )) && over=1
+              done < <(find bin -type f -name "*${PROFILE}*squashfs-*.bin")
+              if (( over == 0 )); then built="$tier"; echo "::endgroup::"; break; fi
+              echo "::warning::Tier $tier exceeds ${MAX_IMAGE_BYTES} bytes; falling back to a smaller package set."
+            else
+              echo "::warning::Tier $tier failed to build (package unavailable or flash overflow); falling back."
+            fi
+            echo "::endgroup::"
+          done
+          [ -n "$built" ] || { echo "No package tier produced an image below the size limit." >&2; exit 1; }
+          echo "Built with tier: $built" | tee "$GITHUB_WORKSPACE/dist/BUILD-TIER.txt"
           find bin -type f -name "*${PROFILE}*squashfs-*.bin" -exec cp -v {} "$GITHUB_WORKSPACE/dist/" \;
           ls -lh "$GITHUB_WORKSPACE/dist"
 
@@ -193,6 +232,7 @@ jobs:
           path: |
             dist/*.bin
             dist/SHA256SUMS
+            dist/BUILD-TIER.txt
           if-no-files-found: error
           retention-days: 30
 

@@ -1,6 +1,15 @@
 #!/bin/sh
-# AlMakhdhi SoftWare AP profile for TP-Link RE205 v3; runs on first boot/reset.
+# AlMakhdhi SoftWare AP profile for TP-Link RE205 v3.
+# Network/Wi-Fi defaults are applied only once (alameer.main.initialized), so
+# settings made in Quick Setup survive a sysupgrade that keeps configuration.
 set -eu
+
+/etc/init.d/alameer-loopguard enable || true
+/etc/init.d/alameer-cpufreq enable || true
+
+if [ "$(uci -q get alameer.main.initialized || echo 0)" = "1" ]; then
+    exit 0
+fi
 
 uci -q delete network.wan || true
 uci -q delete network.wan6 || true
@@ -16,7 +25,9 @@ else
     uci set dhcp.lan.ignore='1'
 fi
 
+uci set alameer.main.initialized='1'
 uci commit network
 uci commit dhcp
+uci commit alameer
 /usr/bin/alameer-reset-wireless
 exit 0

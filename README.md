@@ -3,13 +3,27 @@
 Custom OpenWrt ImageBuilder project for `ramips/mt76x8`, profile `tplink_re205-v3`.
 It retains LuCI's native controllers and page logic while replacing the visible navigation shell with an AlMakhdhi-branded header and slide-out sidebar.
 
-## UI changes in this revision
+## What changed in this revision
 
-- Removes the stock horizontal `Status / System / Network / Log out` navigation bar from view.
-- Adds a fixed dark-purple header: hamburger at the far left, optimized Alameer logo, then **AlMakhdhi SoftWare**.
-- Moves LuCI’s original `#mainmenu` node (or Bootstrap navigation list fallback) into a left slide-out drawer, preserving native links, dropdowns and logout action.
-- Styles LuCI cards, forms, tables, buttons, status labels and login panel in the Alameer dark-purple/crimson palette.
-- Keeps the native LuCI page/router/session logic; only the presentation and navigation container are changed.
+### Sidebar fix
+In OpenWrt 24.10 the stock `Status / System / Network / Log out` row is `#modemenu` (filled by LuCI's `menu-bootstrap.js`), not `.navbar`. The old script looked for the wrong element, so the row stayed on the main screen. `alameer.js` now loads LuCI's own menu tree (`ui.menu`) and builds the slide-out drawer from it (collapsible groups, active page highlighted, logout included). The native header, `#modemenu` and the stock sidebar are hidden; the "Unsaved changes / Apply" indicator is moved into the top bar so it stays usable. Also fixed: `inject-theme-assets.sh` used to leave a literal `\n` in the page `<head>`.
+
+### New pages (menu: **Alameer Tools**)
+| Page | What it does | Honest limits |
+|---|---|---|
+| **WiFi Analyzer** | `iwinfo scan` + `iw survey dump` via an rpcd plugin; canvas chart (no Chart.js, saves flash), congestion score, recommended channel, noise/busy table | Scan-based, not an SDR spectrum analyzer. Scanning on an AP briefly interrupts clients. |
+| **Quick Setup** | AP / Extender (relayd) / Mesh (batman-adv + 802.11s). Validation layer → diff review → apply through LuCI's apply-with-rollback | Mesh needs the FULL package tier (see below). |
+| **Super Channel** | Per-radio country profile (JP/US/DE), channel and txpower, with legal warning and previous-value backup | Uses the regulatory database. Hardware calibration/driver can still block channels. Custom `ZZ` country is experimental (`SUPER_REGDB`). |
+| **Performance & Power** | Live CPU/RAM/load/temperature; cpufreq governor/min/max + auto-by-load service **when the kernel exposes cpufreq** | **MT7628 has a fixed 580 MHz clock and OpenWrt has no cpufreq for it**, so the page shows monitoring only. ImageBuilder cannot change kernel options. |
+| **Loop Prevention** | STP on `br-lan` + user-space storm guard (per-port pps and multicast pps, isolate port for N seconds, uplink ports only warn) started early at boot | User-space only: no switch-ASIC or in-kernel fast path (needs a custom kernel build). RE205 has a single Ethernet port. |
+
+### Package tiers (6,000,000-byte limit)
+The workflow tries, in order: **FULL** (`iw relayd kmod-batman-adv wpad-mesh-mbedtls watchcat luci-app-watchcat`) → **LITE** (`iw relayd`) → **MIN** (`iw`). The first image under the limit wins; `BUILD-TIER.txt` in the artifact says which one. Quick Setup disables Mesh when batman-adv is absent.
+
+### Settings survive sysupgrade
+`99-custom-config` now runs the network/Wi-Fi defaults only once (`alameer.main.initialized`), so Quick Setup choices are kept by `sysupgrade -k`.
+
+> This source was prepared without running a GitHub build or flashing a device. Check the Actions log (tier used, image sizes) and test on the bench before deploying.
 
 ## Wireless duplicate fix
 
@@ -66,29 +80,13 @@ files/usr/bin/alameer-reset-wireless
 files/www/luci-static/bootstrap/alameer.css
 files/www/luci-static/resources/alameer.js
 files/www/luci-static/resources/logo.png
-scripts/inject-theme-assets.sh
+files/www/luci-static/resources/view/alameer/*.js
+files/usr/libexec/rpcd/alameer
+files/usr/sbin/alameer-loopguard, alameer-cpufreq
+files/etc/init.d/alameer-loopguard, alameer-cpufreq
+files/etc/config/alameer
+files/usr/share/luci/menu.d/luci-app-alameer.json
+files/usr/share/rpcd/acl.d/luci-app-alameer.json
+scripts/inject-theme-assets.sh, build-regdb.sh
 README.md
 ```
-
-
-## RE205 v3 hardware limits and requested advanced features
-
-The target in this repository is specifically **RE205 v3**. OpenWrt's device data lists an MT7628AN (single core, 580 MHz), 64 MB RAM, 8 MB flash, MT7610EN 5 GHz radio, and no USB. The image build is already constrained by the small flash partition and this workflow additionally enforces a 6,000,000-byte ceiling.
-
-The following are important engineering limits; this repository does **not** pretend to implement unsupported functions:
-
-- **Spectrum / Wi-Fi analyzer:** the MT76 driver and `iw` may expose per-interface survey counters (channel busy time, noise where supported). That is not a spectrum analyzer and does not provide a true RF spectrum waterfall or guaranteed SNR. SDR-based scanning is not possible without external SDR hardware (the RE205 has no USB port). This revision adds a read-only diagnostic command, `/usr/bin/alameer-device-capabilities`, to report what the running kernel and driver actually expose. A live LuCI chart/RPC service is not included.
-- **CPU frequency control:** the MT7628AN is specified as a 580 MHz part. CPUFreq controls can only be offered if the kernel/device tree exposes a cpufreq driver and scaling interface. The diagnostic command checks this. No governor or clock values are forced, and no unsupported kernel options are assumed.
-- **Super Channel:** this firmware does not bypass regulatory-domain, EEPROM, calibration, driver, or hardware limits. Editing `db.txt` or forcing unsupported channels can cause illegal transmission or radio instability. Only channels advertised as available by the installed driver/regulatory database should be used. No regulatory bypass is included.
-- **Quick Setup:** the existing first-boot configuration remains the project's known network setup (static LAN `192.168.1.20`, DHCP server disabled, and the two configured APs). A guided, transactional LuCI wizard with validation/rollback is not included in this revision.
-- **Loop prevention:** a software-only feature cannot guarantee hardware-level loop isolation on this device. IEEE 802.1D bridge STP can be used only if the relevant bridge and kernel/userspace support are present; it is not equivalent to switch silicon loop guard. No automatic port isolation or custom kernel loop detector is included.
-
-The device capability script is intentionally read-only. Run it over SSH after boot:
-
-```sh
-/usr/bin/alameer-device-capabilities
-```
-
-### Scope of this source revision
-
-This update fixes the LuCI navigation relocation by moving the native menu root intact into the sidebar, and adds a read-only hardware capability report. It does **not** claim that the five advanced features above are fully implemented. Implementing the complete live LuCI applications and backend services requires a separate development phase and runtime testing on the exact RE205 v3 hardware. The 8 MB flash / 64 MB RAM budget also means the existing 6 MB image limit may need reconsideration before adding packages.
