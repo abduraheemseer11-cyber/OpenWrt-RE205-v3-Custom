@@ -1,0 +1,37 @@
+#!/bin/sh
+# WrtMax wireless protection.
+# Drops DHCP server replies (UDP 67 -> 68) that arrive from a wireless port,
+# which stops a rogue DHCP server on a Wi-Fi client from reaching the LAN.
+# Needs kmod-nft-bridge.
+# Skipped in WDS mode, where the upstream router's DHCP replies legitimately
+# arrive through the bridged STA interface.
+# ARP-spoofing and NetCut-style protection are NOT implemented yet.
+
+TABLE=wrtmax_guard
+MODE=$(cat /etc/wrtmax/mode 2>/dev/null)
+
+case "$1" in
+apply)
+	nft delete table bridge "$TABLE" 2>/dev/null
+	if [ "$MODE" = "wds" ]; then
+		logger -t wrtmax "guard: skipped in WDS mode"
+		exit 0
+	fi
+	nft -f - <<'RULES'
+table bridge wrtmax_guard {
+	chain forward {
+		type filter hook forward priority -100; policy accept;
+		iifname "wlan*" udp sport 67 udp dport 68 drop
+	}
+}
+RULES
+	logger -t wrtmax "guard: rogue DHCP filter applied"
+	;;
+flush)
+	nft delete table bridge "$TABLE" 2>/dev/null
+	;;
+*)
+	echo "usage: $0 apply|flush" >&2
+	exit 1
+	;;
+esac

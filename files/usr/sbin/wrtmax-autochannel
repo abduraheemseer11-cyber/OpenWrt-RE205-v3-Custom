@@ -1,0 +1,45 @@
+#!/bin/sh
+# Set each radio to its least congested channel from a fresh scan.
+# 2.4 GHz candidates: 1, 6, 11 (non-overlapping).
+# 5 GHz candidates: non-DFS channels 36-48 and 149-161.
+# Channels must also be allowed by the configured country code.
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+set -eu
+
+SCAN=$(/usr/sbin/wrtmax-scan)
+if [ -z "$SCAN" ]; then
+	echo "no scan results; channels unchanged" >&2
+	exit 1
+fi
+
+for R in radio0 radio1; do
+	BAND=$(uci -q get "wireless.$R.band")
+	case "$BAND" in
+	2g) KEY=2.4; CANDS="1 6 11" ;;
+	5g) KEY=5; CANDS="36 40 44 48 149 153 157 161" ;;
+	*) continue ;;
+	esac
+
+	BEST=$(printf '%s\n' "$SCAN" | awk -F '\t' -v key="$KEY" -v cands="$CANDS" '
+	BEGIN {
+		n = split(cands, c, " ")
+		for (i = 1; i <= n; i++) pct[c[i]] = 0
+	}
+	$1 == key && ($2 in pct) { pct[$2] = $4 }
+	END {
+		best = ""; low = 101
+		for (i = 1; i <= n; i++) {
+			if (pct[c[i]] < low) { low = pct[c[i]]; best = c[i] }
+		}
+		print best
+	}')
+
+	if [ -n "$BEST" ]; then
+		uci set "wireless.$R.channel=$BEST"
+		logger -t wrtmax "autochannel: $R -> channel $BEST"
+	fi
+done
+
+uci commit wireless
+wifi reload

@@ -1,0 +1,91 @@
+#!/bin/sh
+# GET /cgi-bin/wrtmax-status - read-only system status as JSON
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+. /etc/wrtmax/release
+
+esc() {
+	sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+add_warn() {
+	if [ -n "$WARN" ]; then
+		WARN="$WARN,\"$1\""
+	else
+		WARN="\"$1\""
+	fi
+}
+
+HOST=$(uci -q get "system.@system[0].hostname" | esc)
+MODE=$(cat /etc/wrtmax/mode 2>/dev/null | esc)
+UP=$(cut -d. -f1 /proc/uptime)
+LOAD=$(cut -d' ' -f1 /proc/loadavg)
+
+MEM_TOTAL=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+MEM_AVAIL=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+MEM_TOTAL=${MEM_TOTAL:-1}
+MEM_AVAIL=${MEM_AVAIL:-0}
+MEM_PCT=$(( (MEM_TOTAL - MEM_AVAIL) * 100 / MEM_TOTAL ))
+
+TEMP=null
+if [ -r /sys/class/thermal/thermal_zone0/temp ]; then
+	TEMP=$(( $(cat /sys/class/thermal/thermal_zone0/temp) / 1000 ))
+fi
+
+LINK=$(cat /sys/class/net/eth0/carrier 2>/dev/null)
+SPEED=$(cat /sys/class/net/eth0/speed 2>/dev/null)
+LINK=${LINK:-0}
+SPEED=${SPEED:-0}
+
+# Byte counters summed over the Ethernet port and all Wi-Fi ports.
+RX=0
+TX=0
+for D in /sys/class/net/eth0 /sys/class/net/wlan*; do
+	[ -d "$D" ] || continue
+	RX=$(( RX + $(cat "$D/statistics/rx_bytes" 2>/dev/null || echo 0) ))
+	TX=$(( TX + $(cat "$D/statistics/tx_bytes" 2>/dev/null || echo 0) ))
+done
+
+C2=0
+C5=0
+for IF in $(iw dev 2>/dev/null | awk '$1 == "Interface" { print $2 }'); do
+	FREQ=$(iw dev "$IF" info 2>/dev/null | sed -n 's/.*(\([0-9]*\) MHz).*/\1/p' | head -n 1)
+	N=$(iw dev "$IF" station dump 2>/dev/null | grep -c '^Station')
+	if [ "${FREQ:-0}" -lt 3000 ]; then
+		C2=$(( C2 + N ))
+	else
+		C5=$(( C5 + N ))
+	fi
+done
+
+WD=$(uci -q get wrtmax.main.watchdog)
+RT=$(uci -q get wrtmax.main.reboot_time)
+WD_ON=false
+if [ "$WD" = "1" ]; then
+	WD_ON=true
+fi
+
+# Warnings are codes; the panel translates them.
+WARN=""
+MAC=$(tr -d ':' < /sys/class/net/eth0/address 2>/dev/null)
+DEFPIN=$(printf '%s' "$MAC" | tail -c 6 | tr 'a-f' 'A-F')
+if [ -n "$DEFPIN" ]; then
+	DEFHASH=$(printf '%s' "$DEFPIN" | sha256sum | cut -d' ' -f1)
+	STORED=$(cat /etc/wrtmax/pin.sha256 2>/dev/null)
+	if [ "$STORED" = "$DEFHASH" ]; then
+		add_warn default_pin
+	fi
+fi
+if [ "$(uci -q get wireless.default_radio0.encryption)" = "none" ]; then
+	add_warn open_wifi
+fi
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+cat <<EOF
+{"product":"$PRODUCT","firmware":"$VERSION","support":"$SUPPORT","hostname":"$HOST","mode":"$MODE",
+"uptime":$UP,"load":"$LOAD","mem_used_pct":$MEM_PCT,"temp_c":$TEMP,
+"eth":{"link":$LINK,"speed":$SPEED},
+"net":{"rx_bytes":$RX,"tx_bytes":$TX},
+"clients":{"2g":$C2,"5g":$C5},
+"watchdog":{"enabled":$WD_ON,"reboot_time":"$RT"},
+"warnings":[$WARN]}
+EOF

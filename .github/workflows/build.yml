@@ -1,0 +1,150 @@
+name: Build WrtMax firmware (TP-Link RE205 v3)
+
+on:
+  workflow_dispatch:
+    inputs:
+      openwrt_version:
+        description: "OpenWrt release to build against"
+        required: false
+        default: "25.12.6"
+  push:
+    branches: [main]
+    paths:
+      - "files/**"
+      - "config/**"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: read
+
+env:
+  DEVICE_PROFILE: tplink_re205-v3
+  OPENWRT_TARGET: ramips
+  OPENWRT_SUBTARGET: mt76x8
+  DEFAULT_OPENWRT_VERSION: "25.12.6"
+
+jobs:
+  lint:
+    name: Lint overlay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        run: |
+          set -euo pipefail
+          SCRIPTS=$(find files -type f \( -path '*/usr/sbin/*' -o -path '*/etc/init.d/*' -o -path '*/etc/uci-defaults/*' -o -path '*/cgi-bin/*' \))
+          for f in $SCRIPTS; do
+            echo "sh -n $f"
+            sh -n "$f"
+          done
+
+      - name: Shellcheck scripts
+        run: |
+          set -euo pipefail
+          shellcheck --shell=sh --severity=error \
+            $(find files -type f \( -path '*/usr/sbin/*' -o -path '*/etc/uci-defaults/*' -o -path '*/cgi-bin/*' \))
+
+      - name: Check web panel script
+        run: |
+          set -euo pipefail
+          node --check files/www/assets/app.js
+          echo "app.js syntax OK"
+
+  build:
+    name: Build image
+    needs: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zstd xz-utils curl ca-certificates
+
+      - name: Resolve OpenWrt version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.openwrt_version }}
+        run: |
+          VERSION="${INPUT_VERSION:-$DEFAULT_OPENWRT_VERSION}"
+          echo "OpenWrt version: ${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Download and unpack ImageBuilder
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          BASE="https://downloads.openwrt.org/releases/${VERSION}/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+          ARCHIVE=$(curl -fsSL "${BASE}/" \
+            | grep -oE 'openwrt-imagebuilder-[^"<> ]+\.Linux-x86_64\.tar\.(zst|xz)' \
+            | sort -u | head -n 1 || true)
+          if [ -z "${ARCHIVE}" ]; then
+            echo "::error::ImageBuilder archive not found at ${BASE}/"
+            exit 1
+          fi
+          curl -fsSL -o "${ARCHIVE}" "${BASE}/${ARCHIVE}"
+          case "${ARCHIVE}" in
+            *.tar.zst) zstd -dc "${ARCHIVE}" | tar -x ;;
+            *.tar.xz)  tar -xJf "${ARCHIVE}" ;;
+          esac
+          rm -f "${ARCHIVE}"
+          IB_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-imagebuilder-*' | head -n 1)
+          echo "IB_DIR=$(realpath "${IB_DIR}")" >> "$GITHUB_ENV"
+
+      - name: Verify device profile exists
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+          make info > profile-info.txt
+          if ! grep -q "^${DEVICE_PROFILE}:" profile-info.txt; then
+            echo "::error::Profile ${DEVICE_PROFILE} not found in this ImageBuilder"
+            grep -i re205 profile-info.txt || true
+            exit 1
+          fi
+
+      - name: Set executable bits on overlay scripts
+        run: |
+          set -euo pipefail
+          find files -type f \( -path '*/usr/sbin/*' -o -path '*/etc/init.d/*' -o -path '*/etc/uci-defaults/*' -o -path '*/cgi-bin/*' \) -exec chmod 755 {} +
+
+      - name: Build firmware image
+        run: |
+          set -euo pipefail
+          cd "${IB_DIR}"
+          PACKAGES=$(grep -vE '^[[:space:]]*(#|$)' "${GITHUB_WORKSPACE}/config/packages.txt" | tr '\n' ' ')
+          echo "Extra packages: ${PACKAGES}"
+          make image \
+            PROFILE="${DEVICE_PROFILE}" \
+            PACKAGES="${PACKAGES}" \
+            FILES="${GITHUB_WORKSPACE}/files" \
+            EXTRA_IMAGE_NAME="wrtmax"
+
+      - name: Collect images
+        run: |
+          set -euo pipefail
+          BIN="${IB_DIR}/bin/targets/${OPENWRT_TARGET}/${OPENWRT_SUBTARGET}"
+          OUT="${GITHUB_WORKSPACE}/out"
+          mkdir -p "${OUT}"
+          find "${BIN}" -maxdepth 1 -name '*re205-v3*' -exec cp -v {} "${OUT}/" \;
+          cp -v "${BIN}/sha256sums" "${OUT}/" || true
+          if ! compgen -G "${OUT}/*factory*.bin" > /dev/null; then
+            echo "::error::No factory image was produced"
+            ls -la "${BIN}" || true
+            exit 1
+          fi
+          ls -lh "${OUT}"
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrtmax-re205-v3-${{ steps.version.outputs.version }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30

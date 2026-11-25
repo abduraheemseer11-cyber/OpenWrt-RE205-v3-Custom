@@ -1,0 +1,100 @@
+#!/bin/sh
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+# WrtMax Quick Mode switch.
+#   wrtmax-mode ap                  access point on the LAN bridge (default)
+#   wrtmax-mode wds  <ssid> <key>   range extender: radio0 joins the parent as a
+#                                   4-address (WDS) client and the LAN is bridged
+#   wrtmax-mode wisp <ssid> <key>   WISP/repeater: radio0 is a DHCP client of the
+#                                   parent network and clients sit behind NAT
+# Leave <key> empty for an open parent network.
+# wds and wisp must be verified on hardware: STA and 4-address support depend on the driver.
+
+MODE="${1:-}"
+SSID="${2:-}"
+KEY="${3:-}"
+STA=wrtmax_sta
+
+usage() {
+	echo "usage: $0 ap | wds <ssid> <key> | wisp <ssid> <key>" >&2
+	exit 1
+}
+
+case "$MODE" in
+ap)
+	;;
+wds|wisp)
+	if [ -z "$SSID" ] || [ "${#SSID}" -gt 32 ]; then
+		echo "invalid parent SSID" >&2
+		exit 1
+	fi
+	if [ -n "$KEY" ] && [ "${#KEY}" -lt 8 ]; then
+		echo "parent key must be at least 8 characters" >&2
+		exit 1
+	fi
+	;;
+*)
+	usage
+	;;
+esac
+
+# The firewall zone named "wan", if the firewall config has one.
+WAN_ZONE=$(uci show firewall 2>/dev/null | sed -n "s/^firewall\.@zone\[\([0-9]*\)\]\.name='wan'$/\1/p" | head -n 1)
+ZONE="firewall.@zone[$WAN_ZONE]"
+
+# Start from a clean state every time.
+uci -q delete "wireless.$STA"
+uci -q delete network.wwan
+if [ -n "$WAN_ZONE" ]; then
+	uci -q del_list "$ZONE.network=wwan"
+fi
+
+case "$MODE" in
+ap)
+	uci -q set wireless.radio0.disabled='0'
+	uci -q set wireless.radio1.disabled='0'
+	uci -q set wireless.default_radio0.network='lan'
+	uci -q set wireless.default_radio1.network='lan'
+	;;
+wds)
+	uci -q set wireless.radio0.disabled='0'
+	uci set "wireless.$STA=wifi-iface"
+	uci set "wireless.$STA.device=radio0"
+	uci set "wireless.$STA.mode=sta"
+	uci set "wireless.$STA.network=lan"
+	uci set "wireless.$STA.wds=1"
+	uci set "wireless.$STA.ssid=$SSID"
+	;;
+wisp)
+	uci -q set wireless.radio0.disabled='0'
+	uci set "network.wwan=interface"
+	uci set "network.wwan.proto=dhcp"
+	uci set "wireless.$STA=wifi-iface"
+	uci set "wireless.$STA.device=radio0"
+	uci set "wireless.$STA.mode=sta"
+	uci set "wireless.$STA.network=wwan"
+	uci set "wireless.$STA.ssid=$SSID"
+	if [ -n "$WAN_ZONE" ]; then
+		uci add_list "$ZONE.network=wwan"
+	fi
+	;;
+esac
+
+if [ "$MODE" != ap ]; then
+	if [ -n "$KEY" ]; then
+		uci set "wireless.$STA.encryption=psk2"
+		uci set "wireless.$STA.key=$KEY"
+	else
+		uci set "wireless.$STA.encryption=none"
+	fi
+fi
+
+uci commit wireless
+uci commit network
+uci commit firewall
+echo "$MODE" > /etc/wrtmax/mode
+logger -t wrtmax "quick mode set to $MODE"
+
+/usr/sbin/wrtmax-guard apply >/dev/null 2>&1
+/etc/init.d/network reload
+/etc/init.d/firewall reload
+wifi reload

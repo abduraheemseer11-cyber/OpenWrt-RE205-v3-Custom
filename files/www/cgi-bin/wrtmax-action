@@ -1,0 +1,150 @@
+#!/bin/sh
+# POST /cgi-bin/wrtmax-action - settings and actions. Every request must send the panel PIN in "pin".
+# Fields by action:
+#   mode         mode (ap|wds|wisp), ssid, key
+#   autochannel  (none)
+#   txpower      radio (0|1), dbm (5-20)
+#   block        mac, op (block|unblock)
+#   watchdog     enabled (0|1), reboot_time (HH:MM or empty)
+#   setpin       newpin (6-16 letters or digits)
+#   backup       (none); returns a tar.gz download
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+PIN_FILE=/etc/wrtmax/pin.sha256
+
+respond() {
+	printf 'Status: %s\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n%s\n' "$1" "$2"
+	exit 0
+}
+
+bad() {
+	respond "400 Bad Request" "{\"ok\":false,\"error\":\"$1\"}"
+}
+
+BODY=""
+if [ "${REQUEST_METHOD:-}" = "POST" ] && [ "${CONTENT_LENGTH:-0}" -gt 0 ]; then
+	BODY=$(head -c "$CONTENT_LENGTH")
+fi
+
+# Read one urlencoded form field and decode it.
+field() {
+	V=$(printf '%s' "$BODY" | tr '&' '\n' | sed -n "s/^$1=//p" | head -n 1)
+	printf '%b' "$(printf '%s' "$V" | sed 's/+/ /g; s/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
+}
+
+PIN=$(field pin)
+EXPECT=$(cat "$PIN_FILE" 2>/dev/null)
+GOT=$(printf '%s' "$PIN" | sha256sum | cut -d' ' -f1)
+if [ -z "$EXPECT" ] || [ "$GOT" != "$EXPECT" ]; then
+	sleep 1
+	respond "403 Forbidden" '{"ok":false,"error":"wrong PIN"}'
+fi
+
+ACTION=$(field action)
+case "$ACTION" in
+mode)
+	MODE=$(field mode)
+	SSID=$(field ssid)
+	KEY=$(field key)
+	case "$MODE" in
+	ap) ;;
+	wds|wisp)
+		[ -n "$SSID" ] || bad "parent network name is required"
+		if [ -n "$KEY" ] && [ "${#KEY}" -lt 8 ]; then
+			bad "parent password must be at least 8 characters"
+		fi
+		;;
+	*) bad "unknown mode" ;;
+	esac
+	( sleep 2; exec /usr/sbin/wrtmax-mode "$MODE" "$SSID" "$KEY" ) >/dev/null 2>&1 &
+	respond "200 OK" '{"ok":true,"message":"mode change scheduled"}'
+	;;
+
+autochannel)
+	( sleep 2; exec /usr/sbin/wrtmax-autochannel ) >/dev/null 2>&1 &
+	respond "200 OK" '{"ok":true,"message":"channel selection scheduled"}'
+	;;
+
+txpower)
+	RADIO=$(field radio)
+	DBM=$(field dbm)
+	case "$RADIO" in
+	0|1) ;;
+	*) bad "radio must be 0 or 1" ;;
+	esac
+	case "$DBM" in
+	''|*[!0-9]*) bad "dbm must be a number" ;;
+	esac
+	if [ "$DBM" -lt 5 ] || [ "$DBM" -gt 20 ]; then
+		bad "dbm must be between 5 and 20"
+	fi
+	uci set "wireless.radio$RADIO.txpower=$DBM"
+	uci commit wireless
+	( sleep 2; exec wifi reload ) >/dev/null 2>&1 &
+	respond "200 OK" '{"ok":true,"message":"TX power saved"}'
+	;;
+
+block)
+	MAC=$(field mac | tr 'a-f' 'A-F')
+	OP=$(field op)
+	if ! echo "$MAC" | grep -Eq '^([0-9A-F]{2}:){5}[0-9A-F]{2}$'; then
+		bad "invalid MAC address"
+	fi
+	case "$OP" in
+	block|unblock) ;;
+	*) bad "op must be block or unblock" ;;
+	esac
+	for IF in default_radio0 default_radio1; do
+		uci -q del_list "wireless.$IF.maclist=$MAC"
+		if [ "$OP" = block ]; then
+			uci add_list "wireless.$IF.maclist=$MAC"
+			uci set "wireless.$IF.macfilter=deny"
+		elif [ -z "$(uci -q get "wireless.$IF.maclist")" ]; then
+			uci -q delete "wireless.$IF.macfilter"
+		fi
+	done
+	uci commit wireless
+	( sleep 2; exec wifi reload ) >/dev/null 2>&1 &
+	respond "200 OK" '{"ok":true,"message":"saved"}'
+	;;
+
+watchdog)
+	EN=$(field enabled)
+	RT=$(field reboot_time)
+	case "$EN" in
+	0|1) ;;
+	*) bad "enabled must be 0 or 1" ;;
+	esac
+	if [ -n "$RT" ] && ! echo "$RT" | grep -Eq '^([01][0-9]|2[0-3]):[0-5][0-9]$'; then
+		bad "reboot time must be HH:MM"
+	fi
+	uci set "wrtmax.main.watchdog=$EN"
+	uci set "wrtmax.main.reboot_time=$RT"
+	uci commit wrtmax
+	respond "200 OK" '{"ok":true,"message":"watchdog saved"}'
+	;;
+
+setpin)
+	NEW=$(field newpin)
+	if ! echo "$NEW" | grep -Eq '^[A-Za-z0-9]{6,16}$'; then
+		bad "PIN must be 6-16 letters or digits"
+	fi
+	printf '%s' "$NEW" | sha256sum | cut -d' ' -f1 > "$PIN_FILE"
+	respond "200 OK" '{"ok":true,"message":"PIN changed"}'
+	;;
+
+backup)
+	FILE=/tmp/wrtmax-backup.tar.gz
+	if ! sysupgrade -b "$FILE" >/dev/null 2>&1; then
+		bad "backup failed"
+	fi
+	printf 'Content-Type: application/gzip\r\nContent-Disposition: attachment; filename=wrtmax-backup.tar.gz\r\nCache-Control: no-store\r\n\r\n'
+	cat "$FILE"
+	rm -f "$FILE"
+	exit 0
+	;;
+
+*)
+	bad "unknown action"
+	;;
+esac
