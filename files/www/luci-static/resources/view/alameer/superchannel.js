@@ -9,10 +9,10 @@ var callFreqs = rpc.declare({ object: 'iwinfo', method: 'freqlist', params: [ 'd
 
 var PROFILES = {
 	'':   'بدون تغيير (الافتراضي)',
-	'JP': 'JP — قنوات 1–14 (2.4GHz) / 36–140 (5GHz)',
-	'US': 'US — قنوات 1–11 (2.4GHz) / 36–165 (5GHz)',
-	'DE': 'DE — قنوات 1–13 (2.4GHz) / 36–140 (5GHz)',
-	'ZZ': 'ZZ — قاعدة بيانات مخصصة (تتطلب بناء regdb مخصص)'
+	'JP': 'JP — 1-14 / 36-140',
+	'US': 'US — 1-11 / 36-165',
+	'DE': 'DE — 1-13 / 36-140',
+	'ZZ': 'ZZ — قاعدة بيانات مخصصة'
 };
 var SUPER = { '2g': 'JP', '5g': 'US' };
 
@@ -36,13 +36,21 @@ return view.extend({
 		root.appendChild(E('div', { 'class': 'am-msg am-warn' }, 'تحذير: تغيير بلد التنظيم (Country) قد يفتح قنوات أو قدرة إرسال غير قانونية في بلدك. أنت المسؤول عن الالتزام بقوانين الاتصالات المحلية. العتاد نفسه (المعايرة/EEPROM والدرايفر) قد يمنع بعض القنوات مهما غيّرت الإعدادات، وبعض الأجهزة لن ترى القنوات الإضافية (مثل 12–14).'));
 		radios.forEach(function(r, i) {
 			var name = r['.name'], band = r.band || (parseInt(r.channel, 10) > 14 ? '5g' : '2g'), freqs = (d.freqs[i] || []);
-			var prof = E('select', {}, Object.keys(PROFILES).map(function(k) { return E('option', { value: k }, PROFILES[k]); }));
+			var prof = E('select', { 'style': 'width: 100%; max-width: 100%;' }, Object.keys(PROFILES).map(function(k) {
+				var opt = E('option', { value: k }, PROFILES[k]);
+				opt.title = PROFILES[k];
+				return opt;
+			}));
 			prof.value = uci.get('wireless', name, 'country') || '';
-			if (!(prof.value in PROFILES)) prof.appendChild(E('option', { value: prof.value }, prof.value));
+			if (!(prof.value in PROFILES)) {
+				var opt = E('option', { value: prof.value }, prof.value);
+				opt.title = prof.value;
+				prof.appendChild(opt);
+			}
 			prof.value = uci.get('wireless', name, 'country') || '';
-			var ch = E('select', {}, [ E('option', { value: 'auto' }, 'auto') ].concat(freqs.filter(function(f) { return !f.restricted; }).map(function(f) { return E('option', { value: '' + f.channel }, f.channel + ' (' + f.mhz + ' MHz)'); })));
+			var ch = E('select', { 'style': 'width: 100%; max-width: 100%;' }, [ E('option', { value: 'auto' }, 'auto') ].concat(freqs.filter(function(f) { return !f.restricted; }).map(function(f) { return E('option', { value: '' + f.channel }, f.channel + ' (' + f.mhz + ' MHz)'); })));
 			ch.value = uci.get('wireless', name, 'channel') || 'auto';
-			var tx = E('input', { type: 'number', min: 1, max: 30, value: uci.get('wireless', name, 'txpower') || '' });
+			var tx = E('input', { type: 'number', min: 1, max: 30, value: uci.get('wireless', name, 'txpower') || '', 'style': 'width: 100%; max-width: 100%;' });
 			var list = freqs.length ? E('div', { 'class': 'am-tablewrap' }, E('table', { 'class': 'am-tbl' }, [ E('tr', [ E('th', 'القناة'), E('th', 'التردد'), E('th', 'الحالة') ]) ].concat(freqs.map(function(f) {
 				return E('tr', [ E('td', '' + f.channel), E('td', f.mhz + ' MHz'), E('td', f.restricted ? 'محظورة حالياً' : 'متاحة') ]); })))) : E('em', 'قائمة القنوات غير متاحة (الراديو غير فعّال).');
 			root.appendChild(E('div', { 'class': 'am-card' }, [ E('h3', name + ' — ' + (band === '5g' ? '5 GHz' : '2.4 GHz')),
