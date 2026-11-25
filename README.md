@@ -1,130 +1,94 @@
-# WrtMax Firmware for TP-Link RE205 v3
+# AlMakhdhi SoftWare — TP-Link RE205 v3 (OpenWrt 24.10)
 
-OpenWrt-based firmware for the TP-Link RE205 v3 (AC750 Wi-Fi range extender) with the WrtMax Firmware Solutions identity. The image is built in GitHub Actions with the OpenWrt ImageBuilder. The WrtMax control panel is static pages plus shell CGI scripts served by uhttpd, so the image does not need LuCI.
+Custom OpenWrt ImageBuilder project for `ramips/mt76x8`, profile `tplink_re205-v3`.
+It retains LuCI's native controllers and page logic while replacing the visible navigation shell with an AlMakhdhi-branded header and slide-out sidebar.
 
-## Hardware
+## UI changes in this revision
 
-Taken from the upstream OpenWrt commit that added the device (`ramips: add support for TP-Link RE205 v3`, device profile `tplink_re205-v3`, target `ramips/mt76x8`):
+- Removes the stock horizontal `Status / System / Network / Log out` navigation bar from view.
+- Adds a fixed dark-purple header: hamburger at the far left, optimized Alameer logo, then **AlMakhdhi SoftWare**.
+- Moves LuCI’s original `#mainmenu` node (or Bootstrap navigation list fallback) into a left slide-out drawer, preserving native links, dropdowns and logout action.
+- Styles LuCI cards, forms, tables, buttons, status labels and login panel in the Alameer dark-purple/crimson palette.
+- Keeps the native LuCI page/router/session logic; only the presentation and navigation container are changed.
 
-| Item | Value |
-|---|---|
-| SoC | MediaTek MT7628AN, 580 MHz |
-| RAM / flash | 64 MB / 8 MB |
-| 2.4 GHz | MT7628AN built-in, 2T2R, up to 300 Mbps (radio0, phy0) |
-| 5 GHz | MT7610EN, 1T1R, up to 433 Mbps (radio1, phy1) |
-| Ethernet | 1 × 10/100 Mbps |
-| Serial | UART on PCB, 57600 8N1 |
+## Wireless duplicate fix
 
-The 2.4 GHz and 5 GHz LEDs and the signal indicator are driven by GPIO in the upstream device tree.
+Previous versions only replaced the two sections named `alameer_2g` and `alameer_5g`. That left the device's original `default_radio0` / `default_radio1` (or other pre-existing `wifi-iface` sections) in place, which could produce multiple APs advertising the same SSID.
+
+The new `/usr/bin/alameer-reset-wireless` script now:
+
+1. Enumerates every `wifi-iface` UCI section.
+2. Deletes every section assigned to `radio0` or `radio1`.
+3. Creates exactly one AP interface per radio.
+4. Commits wireless configuration and reloads Wi-Fi.
+
+The first-boot script calls this helper automatically. **For a router already running a previous Alameer image**, `/etc/uci-defaults` will not automatically rerun after a normal sysupgrade if its one-shot script has already been consumed. After installing this new image, connect by SSH and run:
+
+```sh
+/usr/bin/alameer-reset-wireless
+```
+
+Then reload the Wireless page. It should show one AP for radio0 and one AP for radio1. This command removes all existing wireless interface sections on those two radios before recreating the requested two; it does not reset the Wi-Fi radios' regulatory country.
+
+## Network and wireless defaults
+
+- Management address: `192.168.1.20/24`
+- WAN and WAN6 UCI interfaces removed.
+- LAN DHCP server disabled; the upstream router must provide DHCP.
+- 2.4 GHz: `AbduRaheem_2G`, AP, open security, channel 6.
+- 5 GHz: `AbduRaheem_5G`, AP, open security, channel 36, HT40.
+- Requests `txpower=30` on both radios. Driver, calibration and regulatory rules may clamp actual output; 30 dBm is not guaranteed.
+
+**Security:** both SSIDs are open (no password), as originally requested. Anyone in radio range may connect. LAN DHCP is disabled, so the upstream router must provide DHCP. For direct management, place a client on `192.168.1.0/24` and browse to `http://192.168.1.20/`.
+
+## Build on GitHub
+
+1. Download and extract this ZIP.
+2. Create an empty GitHub repository.
+3. Upload the extracted folder's **contents**, including hidden `.github`, to the repository root.
+4. Open **Actions**, enable workflows if prompted, then run **Build Alameer OpenWrt 24.10**.
+5. Download the `alameer-openwrt-24.10.8-tplink_re205-v3` artifact from the completed run.
+
+The workflow uses the official OpenWrt 24.10.8 ImageBuilder, injects the custom files, and enforces a strict `< 6,000,000` byte check for both factory and sysupgrade images. It fails rather than publishing an image that violates the size limit. No GitHub-hosted build has been executed as part of preparing this source ZIP.
+
+## Important firmware and lifecycle notes
+
+- OpenWrt 24.10 is no longer the maintained stable branch as of this project's preparation date. Use a currently supported branch for security-sensitive deployments when device support permits.
+- Stock RE205 v3 images already use most of the 8 MB flash budget. LuCI plus the custom UI may exceed the requested 6 MB image limit; the workflow will reject oversized output.
+- Verify the exact hardware revision is RE205 v3. Use factory only for the supported stock-to-OpenWrt installation path and sysupgrade only from a compatible OpenWrt installation. Verify checksums and never interrupt power during flashing.
 
 ## Project layout
 
-```
-.github/workflows/build.yml          Lint, then build the image with ImageBuilder
-config/packages.txt                  Extra packages on top of the device profile
-files/                               Overlay copied into the image
-  banner                             Login banner with support number
-  config/wrtmax                      WrtMax settings (watchdog, reboot time)
-  wrtmax/release                     Product, version and support number
-  wrtmax/mode                        Current Quick Mode (ap by default)
-  init.d/wrtmax                      Service: rogue-DHCP guard and watchdog
-  uci-defaults/90-wrtmax             First-boot and factory-reset defaults
-  usr/sbin/wrtmax-mode               Quick Mode switch (ap, wds, wisp)
-  usr/sbin/wrtmax-watchdog           Stability monitor and scheduled reboot
-  usr/sbin/wrtmax-guard              nftables rule: block rogue DHCP on Wi-Fi ports
-  usr/sbin/wrtmax-scan               Scan nearby networks and rate channel congestion
-  usr/sbin/wrtmax-autochannel        Pick the least congested channel per radio
-  www/index.html                     Panel (Arabic and English, responsive)
-  www/assets/app.js, app.css         Panel logic and styles
-  www/assets/logo.png                WrtMax logo
-  www/cgi-bin/wrtmax-status          Read-only status JSON
-  www/cgi-bin/wrtmax-clients         Read-only client list JSON
-  www/cgi-bin/wrtmax-analyzer        Read-only channel congestion JSON (scans)
-  www/cgi-bin/wrtmax-action          PIN-protected settings and actions
+```text
+.github/workflows/build-openwrt.yml
+files/etc/uci-defaults/99-custom-config
+files/usr/bin/alameer-reset-wireless
+files/www/luci-static/bootstrap/alameer.css
+files/www/luci-static/resources/alameer.js
+files/www/luci-static/resources/logo.png
+scripts/inject-theme-assets.sh
+README.md
 ```
 
-## Defaults
 
-- LAN address `192.168.1.20/24`, hostname `WrtMax`.
-- 2.4 GHz SSID `AbduRaheem_2G` (radio0), 5 GHz SSID `AbduRaheem_5G` (radio1). Both networks are open until a password is set (see Open decisions).
-- Mode: access point on the LAN bridge (`ap`).
-- Support number `776 538 297` in the login banner, the panel footer and the status data.
-- Factory reset (device button or `firstboot`) runs `uci-defaults` again, so the values above come back.
-- Panel PIN: the default is the last six hex digits of the Ethernet MAC address, in uppercase. Only a SHA-256 hash is stored. The panel shows a warning while the default PIN is still in use.
+## RE205 v3 hardware limits and requested advanced features
 
-## Panel
+The target in this repository is specifically **RE205 v3**. OpenWrt's device data lists an MT7628AN (single core, 580 MHz), 64 MB RAM, 8 MB flash, MT7610EN 5 GHz radio, and no USB. The image build is already constrained by the small flash partition and this workflow additionally enforces a 6,000,000-byte ceiling.
 
-Open `http://192.168.1.20/` from a device on the LAN. Dashboard, Wi-Fi analyzer results and the client list are read-only and need no PIN. Changing anything (mode, channel, TX power, blocking, watchdog, PIN, backup) requires the PIN in the top bar.
+The following are important engineering limits; this repository does **not** pretend to implement unsupported functions:
 
-Security limits to know about:
-- The panel is plain HTTP, so the PIN crosses the LAN unencrypted.
-- A failed PIN costs one second. There is no lockout.
-- Backups contain Wi-Fi passwords and the PIN hash. Keep them private.
+- **Spectrum / Wi-Fi analyzer:** the MT76 driver and `iw` may expose per-interface survey counters (channel busy time, noise where supported). That is not a spectrum analyzer and does not provide a true RF spectrum waterfall or guaranteed SNR. SDR-based scanning is not possible without external SDR hardware (the RE205 has no USB port). This revision adds a read-only diagnostic command, `/usr/bin/alameer-device-capabilities`, to report what the running kernel and driver actually expose. A live LuCI chart/RPC service is not included.
+- **CPU frequency control:** the MT7628AN is specified as a 580 MHz part. CPUFreq controls can only be offered if the kernel/device tree exposes a cpufreq driver and scaling interface. The diagnostic command checks this. No governor or clock values are forced, and no unsupported kernel options are assumed.
+- **Super Channel:** this firmware does not bypass regulatory-domain, EEPROM, calibration, driver, or hardware limits. Editing `db.txt` or forcing unsupported channels can cause illegal transmission or radio instability. Only channels advertised as available by the installed driver/regulatory database should be used. No regulatory bypass is included.
+- **Quick Setup:** the existing first-boot configuration remains the project's known network setup (static LAN `192.168.1.20`, DHCP server disabled, and the two configured APs). A guided, transactional LuCI wizard with validation/rollback is not included in this revision.
+- **Loop prevention:** a software-only feature cannot guarantee hardware-level loop isolation on this device. IEEE 802.1D bridge STP can be used only if the relevant bridge and kernel/userspace support are present; it is not equivalent to switch silicon loop guard. No automatic port isolation or custom kernel loop detector is included.
 
-## Building
+The device capability script is intentionally read-only. Run it over SSH after boot:
 
-1. Create a GitHub repository and upload the contents of this folder, keeping the folder structure.
-2. Open **Actions → Build WrtMax firmware (TP-Link RE205 v3) → Run workflow**. The OpenWrt version defaults to 25.12.6.
-3. The job runs a lint step first (shell syntax, shellcheck, `node --check` on the panel script), then builds the image.
-4. Download the artifact `wrtmax-re205-v3-<version>`:
-   - `*-factory.bin` is for the first install from the TP-Link web interface.
-   - `*-sysupgrade.bin` is for upgrades once OpenWrt is running.
+```sh
+/usr/bin/alameer-device-capabilities
+```
 
-## Installing (read first)
+### Scope of this source revision
 
-- The OpenWrt install notes for the sibling RE200 v3 say TP-Link firmware newer than 1.1.0 can reject an OpenWrt factory image. Check the RE205 v3 notes on the OpenWrt wiki before flashing.
-- Back up the stock firmware first.
-- Keep a UART adapter ready (57600 8N1) for recovery. Upstream notes say U-Boot may be locked on newer TP-Link firmware.
-
-## Feature status
-
-| Requested feature | Status |
-|---|---|
-| WrtMax branding, logo, support number in footer, banner and status | Built |
-| Fixed LAN address 192.168.1.20, default SSIDs, factory reset restores defaults | Built (test the reset on hardware) |
-| Arabic and English, responsive panel | Built |
-| Dashboard: uptime, RAM %, traffic rate, Ethernet link and speed, clients per band | Built |
-| Temperature | Shown only if the kernel exposes a sensor. None is expected on MT7628 |
-| Quick Mode: access point, range extender (WDS), WISP / repeater | Built. wds and wisp depend on driver support; verify on hardware |
-| Quick Mode: PPPoE / DHCP router | Not built. The device has one Ethernet port, so the spec marks it as not recommended |
-| Winbox MNDP / neighbour listing as WrtMax | Roadmap |
-| Wi-Fi analyzer: congestion per channel | Built. The score is relative and comes from scan beacon power, not from the radio's busy-time counter |
-| Automatic cleanest-channel selection | Built |
-| Client manager: name, MAC, IP, signal, rate | Built |
-| Client block / unblock | Built, using the wireless MAC filter |
-| Per-client speed limits and SQM QoS | Roadmap (needs per-address traffic shaping) |
-| Watchdog: reactivate Wi-Fi on failure, reboot on hang, daily scheduled reboot | Built |
-| Rogue DHCP protection (reverse DHCP leakage) | Built. Disabled in WDS mode, where upstream DHCP replies arrive on the bridged STA |
-| ARP spoofing and NetCut protection | Roadmap. Not implemented |
-| Multi-SSID with VLAN isolation | Roadmap |
-| 802.11r/k/v fast roaming | Roadmap. Depends on the driver, and the full `wpad` may not fit in 8 MB |
-| 802.11s mesh | Roadmap. Verify with `iw list` on the device first |
-| OneMesh | Not possible. It is proprietary to TP-Link |
-| Hardware NAT / flow offloading | Not possible on MT7628. Software flow offloading is not enabled |
-| CPU frequency control | Not built. No verified cpufreq support for this SoC in OpenWrt |
-| "Super Channel" frequency unlock | Not built. Removing regulatory limits can interfere with licensed services such as radar, and is illegal in many countries. Use the country code and the TX power control instead |
-| Loop prevention with kernel or switch changes | Not built. Standard STP on the bridge is the practical route |
-| TX power control | Built, limited to 5–20 dBm. Check the limit against your country's rules |
-| Settings backup | Built (download). Restore is roadmap |
-| Speed test | Roadmap (needs an iperf3 server) |
-| OTA updates from the team server | Roadmap (needs the server URL) |
-| LuCI administration | Not included, to fit 8 MB |
-
-## Test checklist (on the device)
-
-1. Flash the factory image, open `http://192.168.1.20/`, and check the logo, footer and support number.
-2. Check that the dashboard updates: uptime, memory, Ethernet link, client counts.
-3. Change the PIN and confirm the default-PIN warning disappears.
-4. Set a Wi-Fi password, then confirm the open-network warning is gone.
-5. Scan and run Auto-select channel. Confirm `uci get wireless.radio0.channel` changed.
-6. Block a test device and confirm it cannot rejoin. Then unblock it.
-7. Switch to WDS and then WISP with a test parent network, and confirm the STA interface comes up (`iw dev`).
-8. Enable the watchdog with a reachable gateway, then block the gateway and confirm the Wi-Fi restart after three failed checks.
-9. Factory reset and confirm the IP, SSIDs, PIN and mode return to their defaults.
-10. Download a backup and confirm it opens as a tar.gz.
-
-## Open decisions
-
-- Wi-Fi passwords and encryption. Both networks are open for now.
-- Country code. It is not set, so the driver defaults apply. Set it to the country where the device is used, since it controls allowed channels and TX power.
-- Panel PIN policy. The default is derived from the MAC address. You may prefer a printed PIN on the label.
+This update fixes the LuCI navigation relocation by moving the native menu root intact into the sidebar, and adds a read-only hardware capability report. It does **not** claim that the five advanced features above are fully implemented. Implementing the complete live LuCI applications and backend services requires a separate development phase and runtime testing on the exact RE205 v3 hardware. The 8 MB flash / 64 MB RAM budget also means the existing 6 MB image limit may need reconsideration before adding packages.

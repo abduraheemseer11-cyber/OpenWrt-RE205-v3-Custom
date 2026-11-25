@@ -1,6 +1,0 @@
-# Extra packages on top of the RE205 v3 device profile (the profile already adds the Wi-Fi driver).
-# The image limit is 7808 KiB, so keep this list short.
-# LuCI is not included: the WrtMax panel in files/www replaces it.
-uhttpd
-iw
-kmod-nft-bridge
