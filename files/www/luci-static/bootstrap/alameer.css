@@ -1,6 +1,6 @@
-:root{color-scheme:dark;--abg:#130722;--abar:#1e0b36;--apanel:#261042;--aline:#3e1d6b;--aaccent:#7c3aed;--ahover:#9333ea;--ared:#991b1b;--afg:#f8fafc;--amuted:#cbd5e1;--aok:#10b981;--awarn:#f59e0b}
+:root{color-scheme:dark;--abg:#ffffff;--abar:#1e0b36;--apanel:#261042;--aline:#3e1d6b;--aaccent:#7c3aed;--ahover:#9333ea;--ared:#991b1b;--afg:#f8fafc;--amuted:#cbd5e1;--aok:#10b981;--awarn:#f59e0b}
 html,body{min-height:100%;background:var(--abg)!important;color:var(--afg)!important;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important}
-body{padding-top:70px!important;padding-bottom:75px!important;background-image:radial-gradient(ellipse at 12% 0%,#35115b55,transparent 44%)!important}
+body{padding-top:70px!important;padding-bottom:75px!important;background-image:none!important}
 body.alameer-ui>header,body.alameer-ui .main-left,body.alameer-ui #mainmenu,body.alameer-ui #modemenu,body.alameer-ui .showSide,.alameer-native-navbar{display:none!important}
 body.alameer-ui .main-right{margin:0!important;width:100%!important;max-width:100%!important}
 body.alameer-ui .main{display:block!important}
