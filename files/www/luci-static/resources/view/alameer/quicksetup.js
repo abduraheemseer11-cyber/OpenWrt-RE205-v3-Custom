@@ -12,7 +12,7 @@ function ip2int(s) {
 	if (!m) return null;
 	var o = m.slice(1).map(Number);
 	if (o.some(function(x) { return x > 255; })) return null;
-	return ((o[0] * 16777216) + (o[1] << 16) + (o[2] << 8) + o[3]) >>> 0;
+	return ((o.at(0) * 16777216) + (o.at(1) << 16) + (o.at(2) << 8) + o.at(3)) >>> 0;
 }
 
 function validMask(s) {
@@ -59,7 +59,7 @@ return view.extend({
 
 	render: function(d) {
 		var self = this;
-		this.caps = d[2] || {};
+		this.caps = d.at(2) || {};
 		this.mode = uci.get('alameer', 'main', 'mode') || 'ap';
 		this.activeTab = 'mode';
 
@@ -73,27 +73,32 @@ return view.extend({
 		var sel = function(opts, cur) {
 			return E('select', {}, opts.map(function(o) {
 				return E('option', {
-					value: o[0],
-					selected: String(o[0]) === String(cur) ? 'selected' : null
-				}, o[1]);
+					value: o.at(0),
+					selected: String(o.at(0)) === String(cur) ? 'selected' : null
+				}, o.at(1));
 			}));
 		};
 
 		var F = this.f = {};
 
+		// Operation Mode Select (synced with cards)
 		F.op_mode = sel(MODES.map(function(m) { return [m.id, m.t]; }), this.mode);
 
+		// LAN / IPv4 Settings (preserves current IP)
 		F.ip = inp('text', g('network', 'lan', 'ipaddr', '192.168.1.20'));
 		F.mask = inp('text', g('network', 'lan', 'netmask', '255.255.255.0'));
 
+		// PPPoE Settings
 		F.pppoe_user = inp('text', g('network', 'wan', 'username', ''), 'PPPoE Username');
 		F.pppoe_pass = inp('password', g('network', 'wan', 'password', ''), 'PPPoE Password');
 
+		// Wireless Settings
 		F.ssid2 = inp('text', g('wireless', 'alameer_2g', 'ssid', 'AbduRaheem_2G'), '2.4GHz SSID');
 		F.ssid5 = inp('text', g('wireless', 'alameer_5g', 'ssid', 'AbduRaheem_5G'), '5GHz SSID');
 		F.ch2 = sel(CH_2G, g('wireless', 'radio0', 'channel', '6'));
 		F.ch5 = sel(CH_5G, g('wireless', 'radio1', 'channel', '36'));
 
+		// MORE GUEST.SSID
 		var existingGuests = 0;
 		for (var idx = 1; idx <= 3; idx++) {
 			if (uci.get('wireless', 'alameer_guest2_' + idx)) existingGuests = idx;
@@ -123,22 +128,30 @@ return view.extend({
 			});
 		});
 
-		var curIfname = g('network', 'lan', 'ifname', '');
-		var vlanMatch = /^eth0\.(\d+)$/.exec(curIfname);
-		F.vlan = E('input', { type: 'checkbox', checked: vlanMatch ? 'checked' : null });
-		F.vlan_id = inp('number', vlanMatch ? vlanMatch[1] : '', 'VLAN ID (e.g. 10)');
-		F.vlan_id.classList.toggle('am-hide', !vlanMatch);
+		// Add VLAN (Creates 802.1q br-lan.VID -> Bridge br-vlanVID -> Unmanaged interface vlanVID -> Assigns Wi-Fi network)
+		var savedVlanId = g('alameer', 'main', 'vlan_id', '');
+		if (!savedVlanId) {
+			var net2g = g('wireless', 'alameer_2g', 'network', 'lan');
+			var mVlan = /^vlan(\d+)$/.exec(net2g);
+			if (mVlan) savedVlanId = mVlan.at(1);
+		}
+		F.vlan = E('input', { type: 'checkbox', checked: savedVlanId ? 'checked' : null });
+		F.vlan_id = inp('number', savedVlanId, 'VLAN ID (e.g. 55)');
+		F.vlan_id.classList.toggle('am-hide', !savedVlanId);
 		F.vlan.addEventListener('change', function() {
 			F.vlan_id.classList.toggle('am-hide', !F.vlan.checked);
 		});
 
+		// Wifi-Password Protection
 		F.key = inp('password', g('wireless', 'alameer_2g', 'key', ''), 'Leave empty = Open Network');
 
+		// WDS & Mesh Settings
 		F.wds_ssid = inp('text', g('wireless', 'alameer_sta', 'ssid', ''), 'Target Uplink SSID');
 		F.wds_key = inp('password', g('wireless', 'alameer_sta', 'key', ''), 'Target Uplink Password');
 		F.meshid = inp('text', g('wireless', 'alameer_mesh', 'mesh_id', 'AlMakhdhi-Mesh'), 'Mesh ID');
 		F.meshkey = inp('password', g('wireless', 'alameer_mesh', 'key', ''), 'Leave empty = Open; else SAE');
 
+		// Status Display Elements
 		this.statusIcon = E('div', { 'class': 'qs-status-badge' });
 		this.statusTitle = E('h3', { style: 'margin:0 0 4px;' });
 		this.statusDesc = E('small');
@@ -158,6 +171,7 @@ return view.extend({
 
 		F.op_mode.addEventListener('change', function() { self.selectMode(F.op_mode.value); });
 
+		// Tab Navigation
 		var tabs = [
 			{ id: 'mode', label: 'Current Mode' },
 			{ id: 'wan', label: 'WAN / LAN Settings' },
@@ -174,6 +188,7 @@ return view.extend({
 			return b;
 		}));
 
+		// Tab Panels
 		this.panels = {
 			mode: E('div', { 'class': 'am-card' }, [
 				E('h3', 'Current Mode Status'),
@@ -279,9 +294,9 @@ return view.extend({
 	selectMode: function(id) {
 		this.mode = id;
 		this.f.op_mode.value = id;
-		var info = MODES.filter(function(m) { return m.id === id; })[0] || MODES[1];
+		var info = MODES.filter(function(m) { return m.id === id; }).at(0) || MODES.at(1);
 		this.modeCards.forEach(function(c, idx) {
-			c.classList.toggle('selected', MODES[idx].id === id);
+			c.classList.toggle('selected', MODES.at(idx).id === id);
 		});
 		this.statusIcon.style.background = info.color;
 		this.statusIcon.textContent = info.icon;
@@ -301,23 +316,67 @@ return view.extend({
 			return;
 		}
 
+		var useVlan = F.vlan.checked && /^\d+$/.test(v('vlan_id'));
+		var vid = useVlan ? v('vlan_id') : '';
+		var wifiNet = useVlan ? ('vlan' + vid) : 'lan';
+
+		if (F.vlan.checked && !useVlan) {
+			ui.addNotification(null, E('p', 'يرجى إدخال رقم VLAN صحيح (أرقام فقط، مثل 55).'), 'danger');
+			return;
+		}
+
 		var ops = [];
 		var set = function(c, s, o, val, type) { ops.push({ t: 'set', c: c, s: s, o: o, v: val, stype: type || 'interface' }); };
 		var unset = function(c, s, o) { ops.push({ t: 'unset', c: c, s: s, o: o }); };
 		var del = function(c, s) { ops.push({ t: 'del', c: c, s: s }); };
 
-		// Save current mode
+		// Save current mode & VLAN state
 		set('alameer', 'main', 'mode', mode, 'alameer');
 
-		// LAN Settings
+		// Clean up previously created Quick Setup VLAN devices & interfaces
+		var prevVid = uci.get('alameer', 'main', 'vlan_id');
+		if (prevVid && prevVid !== vid) {
+			del('network', 'alameer_vdev_' + prevVid);
+			del('network', 'alameer_vbr_' + prevVid);
+			del('network', 'vlan' + prevVid);
+		}
+		if (vid) {
+			del('network', 'alameer_vdev_' + vid);
+			del('network', 'alameer_vbr_' + vid);
+			del('network', 'vlan' + vid);
+		}
+
+		// LAN Settings (keep br-lan clean on IPv4)
 		set('network', 'lan', 'proto', 'static', 'interface');
 		set('network', 'lan', 'ipaddr', v('ip'), 'interface');
 		set('network', 'lan', 'netmask', v('mask'), 'interface');
+		unset('network', 'lan', 'ifname');
 
-		if (F.vlan.checked && v('vlan_id')) {
-			set('network', 'lan', 'ifname', 'eth0.' + v('vlan_id'), 'interface');
+		if (useVlan) {
+			var rawVlanDev = 'br-lan.' + vid;
+			var bridgeName = 'br-vlan' + vid;
+			var ifaceName = 'vlan' + vid;
+
+			// 1. Add device configuration: VLAN (802.1q) -> br-lan.<VID>
+			set('network', 'alameer_vdev_' + vid, 'type', '8021q', 'device');
+			set('network', 'alameer_vdev_' + vid, 'ifname', 'br-lan', 'device');
+			set('network', 'alameer_vdev_' + vid, 'vid', vid, 'device');
+			set('network', 'alameer_vdev_' + vid, 'name', rawVlanDev, 'device');
+
+			// 2. Add device configuration: Bridge device -> br-vlan<VID>, Port: br-lan.<VID>, IPv6 disabled
+			set('network', 'alameer_vbr_' + vid, 'type', 'bridge', 'device');
+			set('network', 'alameer_vbr_' + vid, 'name', bridgeName, 'device');
+			set('network', 'alameer_vbr_' + vid, 'ports', [rawVlanDev], 'device');
+			set('network', 'alameer_vbr_' + vid, 'ipv6', '0', 'device');
+
+			// 3. Add new interface: vlan<VID>, Protocol: Unmanaged (none), Device: br-vlan<VID>
+			set('network', ifaceName, 'proto', 'none', 'interface');
+			set('network', ifaceName, 'device', bridgeName, 'interface');
+			set('network', ifaceName, 'auto', '1', 'interface');
+
+			set('alameer', 'main', 'vlan_id', vid, 'alameer');
 		} else {
-			unset('network', 'lan', 'ifname');
+			unset('alameer', 'main', 'vlan_id');
 		}
 
 		// Cleanup old dynamic interfaces & guest SSIDs
@@ -340,10 +399,10 @@ return view.extend({
 
 		var enc = F.key.value ? 'psk2' : 'none';
 
-		// Primary 2.4GHz & 5GHz APs
+		// Primary 2.4GHz & 5GHz APs assigned to wifiNet ('vlan<VID>' if VLAN enabled, else 'lan')
 		set('wireless', 'alameer_2g', 'device', 'radio0', 'wifi-iface');
 		set('wireless', 'alameer_2g', 'mode', 'ap', 'wifi-iface');
-		set('wireless', 'alameer_2g', 'network', 'lan', 'wifi-iface');
+		set('wireless', 'alameer_2g', 'network', wifiNet, 'wifi-iface');
 		set('wireless', 'alameer_2g', 'ssid', v('ssid2'), 'wifi-iface');
 		set('wireless', 'alameer_2g', 'encryption', enc, 'wifi-iface');
 		if (F.key.value) set('wireless', 'alameer_2g', 'key', v('key'), 'wifi-iface');
@@ -351,7 +410,7 @@ return view.extend({
 
 		set('wireless', 'alameer_5g', 'device', 'radio1', 'wifi-iface');
 		set('wireless', 'alameer_5g', 'mode', 'ap', 'wifi-iface');
-		set('wireless', 'alameer_5g', 'network', 'lan', 'wifi-iface');
+		set('wireless', 'alameer_5g', 'network', wifiNet, 'wifi-iface');
 		set('wireless', 'alameer_5g', 'ssid', v('ssid5'), 'wifi-iface');
 		set('wireless', 'alameer_5g', 'encryption', enc, 'wifi-iface');
 		if (F.key.value) set('wireless', 'alameer_5g', 'key', v('key'), 'wifi-iface');
@@ -360,20 +419,20 @@ return view.extend({
 		// MORE GUEST.SSID interfaces (2.4GHz + 5GHz)
 		var gCount = parseInt(F.guest_count.value, 10) || 0;
 		for (var gIdx = 1; gIdx <= gCount; gIdx++) {
-			var item = F.guest_inputs[gIdx - 1];
+			var item = F.guest_inputs.at(gIdx - 1);
 			var gs2 = (item.s2.value || '').trim() || ('Guest_' + gIdx + '_2G');
 			var gs5 = (item.s5.value || '').trim() || ('Guest_' + gIdx + '_5G');
 
 			set('wireless', 'alameer_guest2_' + gIdx, 'device', 'radio0', 'wifi-iface');
 			set('wireless', 'alameer_guest2_' + gIdx, 'mode', 'ap', 'wifi-iface');
-			set('wireless', 'alameer_guest2_' + gIdx, 'network', 'lan', 'wifi-iface');
+			set('wireless', 'alameer_guest2_' + gIdx, 'network', wifiNet, 'wifi-iface');
 			set('wireless', 'alameer_guest2_' + gIdx, 'ssid', gs2, 'wifi-iface');
 			set('wireless', 'alameer_guest2_' + gIdx, 'encryption', enc, 'wifi-iface');
 			if (F.key.value) set('wireless', 'alameer_guest2_' + gIdx, 'key', v('key'), 'wifi-iface');
 
 			set('wireless', 'alameer_guest5_' + gIdx, 'device', 'radio1', 'wifi-iface');
 			set('wireless', 'alameer_guest5_' + gIdx, 'mode', 'ap', 'wifi-iface');
-			set('wireless', 'alameer_guest5_' + gIdx, 'network', 'lan', 'wifi-iface');
+			set('wireless', 'alameer_guest5_' + gIdx, 'network', wifiNet, 'wifi-iface');
 			set('wireless', 'alameer_guest5_' + gIdx, 'ssid', gs5, 'wifi-iface');
 			set('wireless', 'alameer_guest5_' + gIdx, 'encryption', enc, 'wifi-iface');
 			if (F.key.value) set('wireless', 'alameer_guest5_' + gIdx, 'key', v('key'), 'wifi-iface');
