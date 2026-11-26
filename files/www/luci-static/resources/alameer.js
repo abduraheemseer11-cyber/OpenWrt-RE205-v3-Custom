@@ -55,6 +55,10 @@
 
   const start=()=>{
     if(document.getElementById('alameer-shell'))return;
+    
+    // [FIX] منع السكربت من العمل في صفحة تسجيل الدخول
+    if (!document.getElementById('mainmenu') && !document.getElementById('modemenu')) return;
+
     const shell=el('div');shell.id='alameer-shell';
     const bar=el('header','alameer-topbar');
     const toggle=el('button','alameer-toggle');toggle.type='button';
