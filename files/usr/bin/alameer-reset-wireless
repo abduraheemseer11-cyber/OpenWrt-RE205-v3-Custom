@@ -9,8 +9,7 @@ for radio in radio0 radio1; do
     }
 done
 
-# Delete every wifi-iface assigned to either physical radio, including vendor defaults
-# and duplicate sections left by previous configurations.
+# Delete every wifi-iface assigned to either physical radio
 uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p' | while IFS= read -r section; do
     [ -n "$section" ] || continue
     device="$(uci -q get "wireless.${section}.device" 2>/dev/null || true)"
@@ -36,11 +35,16 @@ uci set wireless.alameer_5g.network='lan'
 uci set wireless.alameer_5g.ssid='AbduRaheem_5G'
 uci set wireless.alameer_5g.encryption='none'
 
+# 2.4GHz: 20dBm
 uci set wireless.radio0.channel='6'
-uci set wireless.radio0.txpower='30'
+uci set wireless.radio0.htmode='HT20'
+uci set wireless.radio0.txpower='20'
+
+# 5GHz: 802.11ac (VHT80) & 20dBm
 uci set wireless.radio1.channel='36'
-uci set wireless.radio1.htmode='HT40'
-uci set wireless.radio1.txpower='30'
+uci set wireless.radio1.hwmode='11a'
+uci set wireless.radio1.htmode='VHT80'
+uci set wireless.radio1.txpower='20'
 
 uci commit wireless
 wifi reload >/dev/null 2>&1 || /etc/init.d/network reload >/dev/null 2>&1 || true
