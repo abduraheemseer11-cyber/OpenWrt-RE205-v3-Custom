@@ -13,7 +13,6 @@ function ip2int(s) {
 	return ((o[0] * 16777216) + (o[1] << 16) + (o[2] << 8) + o[3]) >>> 0;
 }
 function validMask(s) { var n = ip2int(s); if (n === null || n === 0) return false; var inv = (~n) >>> 0; return (inv & (inv + 1)) === 0; }
-function utf8len(s) { return unescape(encodeURIComponent(s || '')).length; }
 
 var MODES = [
 	{ id: 'pppoe', t: 'PPPoE Dial-up', c: 'mode-pppoe', icon: '🌐' },
@@ -23,7 +22,9 @@ var MODES = [
 ];
 
 return view.extend({
-	load: function() { return Promise.all([ uci.load([ 'network', 'wireless', 'dhcp' ]), callWifiStatus().catch(function() { return {}; }), callCaps().catch(function() { return {}; }) ]); },
+	load: function() { 
+		return Promise.all([ uci.load([ 'network', 'wireless', 'dhcp' ]), callWifiStatus().catch(function() { return {}; }), callCaps().catch(function() { return {}; }) ]); 
+	},
 
 	render: function(d) {
 		var self = this, st = d[1], caps = d[2] || {};
@@ -34,7 +35,7 @@ return view.extend({
 		});
 		this.radios = radios;
 		var g = function(c, s, o, def) { var v = uci.get(c, s, o); return v == null ? def : v; };
-		var inp = function(type, val, ph) { return E('input', { type: type, value: val == null ? '' : val, placeholder: ph || '', style: 'width:100%' }); };
+		var inp = function(type, val, ph) { return E('input', { type: type, value: val == null ? '' : val, placeholder: ph || '', style: 'width:100%; max-width:300px;' }); };
 		var F = this.f = {};
 		
 		// LAN Settings
@@ -48,8 +49,12 @@ return view.extend({
 		// Wireless Settings (AP)
 		F.ssid2 = inp('text', g('wireless', 'alameer_2g', 'ssid', 'AbduRaheem_2G')); 
 		F.ssid5 = inp('text', g('wireless', 'alameer_5g', 'ssid', 'AbduRaheem_5G'));
-		F.key = inp('password', g('wireless', 'alameer_2g', 'key', ''), 'فارغ = شبكة مفتوحة (8–63 حرفاً)');
+		F.key = inp('password', g('wireless', 'alameer_2g', 'key', ''), 'فارغ = شبكة مفتوحة');
 		
+		// VLAN
+		F.vlan = E('input', { type: 'checkbox' });
+		F.vlan_id = inp('number', '', 'VLAN ID (مثال: 1)');
+
 		// WDS Settings
 		F.wds_ssid = inp('text', '', 'اسم شبكة الهدف (SSID)');
 		F.wds_key = inp('password', '', 'كلمة مرور الشبكة الهدف');
@@ -58,12 +63,12 @@ return view.extend({
 		F.meshid = inp('text', g('wireless', 'alameer_mesh', 'mesh_id', 'AlMakhdhi-Mesh')); 
 		F.meshkey = inp('password', '', 'فارغ = مفتوح؛ وإلا SAE');
 
-		this.out = E('div'); this.btns = E('div', { 'class': 'am-row' });
+		this.out = E('div'); 
 
 		this.sections = {
 			pppoe: E('div', { 'class': 'am-hide' }, [ E('h3', 'إعدادات PPPoE'),
-				E('div', { 'class': 'am-row' }, [ E('label', 'اسم المستخدم (Username)'), F.pppoe_user ]), 
-				E('div', { 'class': 'am-row' }, [ E('label', 'كلمة المرور (Password)'), F.pppoe_pass ]) ]),
+				E('div', { 'class': 'am-row' }, [ E('label', 'اسم المستخدم'), F.pppoe_user ]), 
+				E('div', { 'class': 'am-row' }, [ E('label', 'كلمة المرور'), F.pppoe_pass ]) ]),
 			
 			ap: E('div', {}, [ E('h3', 'إعدادات Access Point'),
 				E('div', { 'class': 'am-row' }, [ E('label', 'اسم شبكة 2.4GHz'), F.ssid2 ]), 
@@ -72,7 +77,7 @@ return view.extend({
 			
 			wds: E('div', { 'class': 'am-hide' }, [ E('h3', 'إعدادات WDS Bridge'),
 				E('div', { 'class': 'am-row' }, [ E('label', 'SSID الشبكة الهدف'), F.wds_ssid ]), 
-				E('div', { 'class': 'am-row' }, [ E('label', 'كلمة مرور الشبكة الهدف'), F.wds_key ]) ]),
+				E('div', { 'class': 'am-row' }, [ E('label', 'كلمة المرور'), F.wds_key ]) ]),
 			
 			mesh: E('div', { 'class': 'am-hide' }, [ E('h3', 'إعدادات MESH'),
 				E('div', { 'class': 'am-row' }, [ E('label', 'Mesh ID'), F.meshid ]),
@@ -85,133 +90,127 @@ return view.extend({
 				document.querySelectorAll('.mode-card').forEach(function(c) { c.classList.remove('selected'); }); 
 				card.classList.add('selected');
 				Object.keys(self.sections).forEach(function(k) { self.sections[k].classList.toggle('am-hide', k !== m.id); });
-				self.out.textContent = ''; self.plan = null; self.updateBtns();
+				self.out.textContent = '';
 			} }, [ E('i', {}, m.icon), E('span', {}, m.t) ]);
 			return card;
 		});
 
-		this.updateBtns = function() {
-			self.btns.textContent = '';
-			self.btns.appendChild(E('button', { 'class': 'btn cbi-button', 'click': function() { self.review(); } }, 'مراجعة وتحقق'));
-			if (self.plan && !self.plan.errors.length) self.btns.appendChild(E('button', { 'class': 'btn cbi-button-save', 'click': function() { self.apply(); } }, 'حفظ وتطبيق'));
-		};
-		this.updateBtns();
+		// Action Buttons
+		var btnApply = E('button', { 'class': 'btn cbi-button-save', 'click': function() { self.applyAll(true); } }, 'Save & Apply');
+		var btnSave = E('button', { 'class': 'btn cbi-button', 'click': function() { self.applyAll(false); } }, 'Save');
+		var btnReset = E('button', { 'class': 'btn cbi-button-reset', 'click': function() { window.location.reload(); } }, 'Reset');
 
 		return E('div', { 'class': 'am-page' }, [ 
 			E('h2', 'Quick Setup'),
 			E('div', { 'class': 'am-card' }, [ 
 				E('h3', 'Select Operation Mode', {style: 'text-align:center;'}),
-				E('p', 'Choose the wireless operation mode for your device:', {style: 'text-align:center; font-size:12px; color:#888;'}),
 				E('div', { 'class': 'mode-grid' }, cards) 
 			]),
-			E('div', { 'class': 'am-card' }, [ this.sections.pppoe, this.sections.ap, this.sections.wds, this.sections.mesh ]),
+			E('div', { 'class': 'am-card' }, [ 
+				this.sections.pppoe, this.sections.ap, this.sections.wds, this.sections.mesh,
+				E('hr'),
+				E('div', { 'class': 'am-row' }, [ E('label', 'Add VLAN'), F.vlan, F.vlan_id ])
+			]),
 			E('div', { 'class': 'am-card' }, [ E('h3', 'إعدادات الشبكة (LAN/IPv4)'),
 				E('div', { 'class': 'am-row' }, [ E('label', 'IPv4 Address'), F.ip ]), 
-				E('div', { 'class': 'am-row' }, [ E('label', 'IPv4 Netmask'), F.mask ]) ]),
-			E('div', { 'class': 'am-card' }, [ this.btns, this.out ])
+				E('div', { 'class': 'am-row' }, [ E('label', 'IPv4 Netmask'), F.mask ]) 
+			]),
+			this.out,
+			E('div', { 'class': 'cbi-page-actions' }, [ btnApply, btnSave, btnReset ])
 		]);
 	},
 
-	/* ---------- validation layer ---------- */
-	plan_: function() {
-		var F = this.f, caps = this.caps, radios = this.radios, mode = this.mode, errors = [], warnings = [], ops = [];
+	applyAll: function(apply) {
+		var self = this, F = this.f, mode = this.mode;
 		var v = function(k) { return (F[k].value || '').trim(); };
+		var ops = [];
 		var set = function(c, s, o, val) { ops.push({ t: 'set', c: c, s: s, o: o, v: val }); };
 		var unset = function(c, s, o) { ops.push({ t: 'unset', c: c, s: s, o: o }); };
-		var sec = function(c, s, type) { ops.push({ t: 'sec', c: c, s: s, type: type }); };
 		var del = function(c, s) { ops.push({ t: 'del', c: c, s: s }); };
 
-		if (ip2int(v('ip')) === null) errors.push('عنوان IPv4 غير صالح.');
-		if (!validMask(v('mask'))) errors.push('قناع الشبكة غير صالح.');
+		// LAN Settings
+		set('network', 'lan', 'proto', 'static'); 
+		set('network', 'lan', 'ipaddr', v('ip')); 
+		set('network', 'lan', 'netmask', v('mask'));
+		
+		if (F.vlan.checked && F.vlan_id.value) {
+			set('network', 'lan', 'ifname', 'eth0.' + v('vlan_id'));
+		} else {
+			unset('network', 'lan', 'ifname');
+		}
 
-		var cleanup = function(keep) {
-			[ 'alameer_sta', 'alameer_mesh' ].forEach(function(s) { if (keep.indexOf(s) < 0 && uci.get('wireless', s)) del('wireless', s); });
-			if (keep.indexOf('wds') < 0) [ 'wwan', 'repeater_bridge' ].forEach(function(s) { if (uci.get('network', s)) del('network', s); });
-			if (keep.indexOf('mesh') < 0) { [ 'bat0', 'bat0_hardif' ].forEach(function(s) { if (uci.get('network', s)) del('network', s); }); }
-		};
-		var ssidCheck = function(name, s) { if (!s || utf8len(s) > 32) errors.push(name + ': SSID يجب أن يكون 1–32 بايت.'); };
-		var keyCheck = function(name, k) { if (k && (k.length < 8 || k.length > 63)) errors.push(name + ': كلمة المرور يجب أن تكون 8–63 حرفاً.'); };
-
-		set('network', 'lan', 'proto', 'static'); set('network', 'lan', 'ipaddr', v('ip')); set('network', 'lan', 'netmask', v('mask'));
+		// Cleanup old interfaces
+		['alameer_sta', 'alameer_mesh', 'wwan', 'bat0'].forEach(function(s) { del('network', s); del('wireless', s); });
 
 		if (mode === 'pppoe') {
-			cleanup([]);
-			if (!v('pppoe_user')) errors.push('اسم مستخدم PPPoE مطلوب.');
-			if (!v('pppoe_pass')) errors.push('كلمة مرور PPPoE مطلوبة.');
-			sec('network', 'wan', 'interface'); 
 			set('network', 'wan', 'proto', 'pppoe'); 
 			set('network', 'wan', 'username', v('pppoe_user')); 
 			set('network', 'wan', 'password', v('pppoe_pass'));
 			set('dhcp', 'lan', 'ignore', '0');
 		} else if (mode === 'wds') {
-			cleanup(['wds']);
-			ssidCheck('WDS', v('wds_ssid')); keyCheck('WDS', F.wds_key.value);
-			sec('wireless', 'alameer_sta', 'wifi-iface'); 
-			set('wireless', 'alameer_sta', 'device', radios[0] ? radios[0].name : 'radio0'); 
-			set('wireless', 'alameer_sta', 'mode', 'wds');
+			set('wireless', 'alameer_sta', 'device', 'radio0'); 
+			set('wireless', 'alameer_sta', 'mode', 'sta');
 			set('wireless', 'alameer_sta', 'network', 'wwan'); 
 			set('wireless', 'alameer_sta', 'ssid', v('wds_ssid'));
 			set('wireless', 'alameer_sta', 'encryption', F.wds_key.value ? 'psk2' : 'none');
-			if (F.wds_key.value) set('wireless', 'alameer_sta', 'key', F.wds_key.value);
-			sec('network', 'wwan', 'interface'); set('network', 'wwan', 'proto', 'dhcp');
+			if (F.wds_key.value) set('wireless', 'alameer_sta', 'key', v('wds_key'));
+			set('network', 'wwan', 'proto', 'dhcp');
 			set('dhcp', 'lan', 'ignore', '1');
 		} else if (mode === 'ap') {
-			cleanup([]);
-			ssidCheck('2.4GHz', v('ssid2')); ssidCheck('5GHz', v('ssid5')); keyCheck('الواي فاي', F.key.value);
 			var enc = F.key.value ? 'psk2' : 'none';
 			
-			[ [ 'alameer_2g', 'ssid2', '2g' ], [ 'alameer_5g', 'ssid5', '5g' ] ].forEach(function(x) {
-				var r = radios.filter(function(q) { return q.band === x[2]; })[0]; if (!r) return;
-				if (!uci.get('wireless', x[0])) { sec('wireless', x[0], 'wifi-iface'); set('wireless', x[0], 'device', r.name); set('wireless', x[0], 'mode', 'ap'); set('wireless', x[0], 'network', 'lan'); }
-				set('wireless', x[0], 'ssid', v(x[1])); set('wireless', x[0], 'encryption', enc);
-				if (F.key.value) set('wireless', x[0], 'key', F.key.value); else unset('wireless', x[0], 'key');
-			});
+			set('wireless', 'alameer_2g', 'device', 'radio0'); 
+			set('wireless', 'alameer_2g', 'mode', 'ap'); 
+			set('wireless', 'alameer_2g', 'network', 'lan');
+			set('wireless', 'alameer_2g', 'ssid', v('ssid2')); 
+			set('wireless', 'alameer_2g', 'encryption', enc);
+			if (F.key.value) set('wireless', 'alameer_2g', 'key', v('key'));
+
+			// 5GHz AC Mode & Tx-Power 20
+			set('wireless', 'alameer_5g', 'device', 'radio1'); 
+			set('wireless', 'alameer_5g', 'mode', 'ap'); 
+			set('wireless', 'alameer_5g', 'network', 'lan');
+			set('wireless', 'alameer_5g', 'ssid', v('ssid5')); 
+			set('wireless', 'alameer_5g', 'encryption', enc);
+			if (F.key.value) set('wireless', 'alameer_5g', 'key', v('key'));
+			
+			// Force AC (VHT) mode and 20dBm
+			set('wireless', 'radio1', 'htmode', 'VHT40');
+			set('wireless', 'radio1', 'txpower', '20');
+			
 			set('dhcp', 'lan', 'ignore', '0');
-		} else {
-			if (!caps.batman) errors.push('batman-adv غير موجود. أعد البناء مع حزم Mesh.');
-			cleanup(['mesh']);
-			if (!v('meshid') || utf8len(v('meshid')) > 32) errors.push('Mesh ID يجب أن يكون 1–32 بايت.');
-			keyCheck('Mesh', F.meshkey.value);
-			sec('wireless', 'alameer_mesh', 'wifi-iface'); set('wireless', 'alameer_mesh', 'device', radios[0] ? radios[0].name : 'radio0'); set('wireless', 'alameer_mesh', 'mode', 'mesh');
-			set('wireless', 'alameer_mesh', 'mesh_id', v('meshid')); set('wireless', 'alameer_mesh', 'mesh_fwding', '0'); set('wireless', 'alameer_mesh', 'network', 'bat0_hardif');
-			set('wireless', 'alameer_mesh', 'encryption', F.meshkey.value ? 'sae' : 'none');
-			if (F.meshkey.value) set('wireless', 'alameer_mesh', 'key', F.meshkey.value); else unset('wireless', 'alameer_mesh', 'key');
-			sec('network', 'bat0', 'interface'); set('network', 'bat0', 'proto', 'batadv'); set('network', 'bat0', 'routing_algo', 'BATMAN_IV');
-			sec('network', 'bat0_hardif', 'interface'); set('network', 'bat0_hardif', 'proto', 'batadv_hardif'); set('network', 'bat0_hardif', 'master', 'bat0'); set('network', 'bat0_hardif', 'mtu', '1536');
+		} else if (mode === 'mesh') {
+			set('wireless', 'alameer_mesh', 'device', 'radio0'); 
+			set('wireless', 'alameer_mesh', 'mode', 'mesh');
+			set('wireless', 'alameer_mesh', 'mesh_id', v('meshid')); 
+			set('wireless', 'alameer_mesh', 'network', 'bat0_hardif');
+			set('network', 'bat0', 'proto', 'batadv');
 			set('dhcp', 'lan', 'ignore', '1');
 		}
-		return { errors: errors, warnings: warnings, ops: ops };
-	},
 
-	review: function() {
-		var out = this.out; out.textContent = ''; this.plan = this.plan_();
-		var p = this.plan;
-		p.errors.forEach(function(e) { out.appendChild(E('div', { 'class': 'am-msg am-err' }, '✖ ' + e)); });
-		p.warnings.forEach(function(e) { out.appendChild(E('div', { 'class': 'am-msg am-warn' }, '⚠ ' + e)); });
-		var rows = [];
-		p.ops.forEach(function(o) {
-			var path = o.c + '.' + o.s + (o.o ? '.' + o.o : '');
-			if (o.t === 'set') { var old = uci.get(o.c, o.s, o.o); if (old !== o.v) rows.push([ path, old == null ? '—' : (/key|pass/.test(o.o) ? '***' : old), /key|pass/.test(o.o) ? '***' : o.v ]); }
-			else if (o.t === 'unset') { if (uci.get(o.c, o.s, o.o) != null) rows.push([ path, '(قيمة)', 'محذوف' ]); }
-			else if (o.t === 'sec') { if (!uci.get(o.c, o.s)) rows.push([ o.c + '.' + o.s, '—', 'قسم جديد (' + o.type + ')' ]); }
-			else if (o.t === 'del') { if (uci.get(o.c, o.s)) rows.push([ o.c + '.' + o.s, 'موجود', 'يُحذف' ]); }
-		});
-		out.appendChild(E('h3', 'التغييرات المقترحة (' + rows.length + ')'));
-		out.appendChild(E('div', { 'class': 'am-tablewrap' }, E('table', { 'class': 'am-tbl' }, [ E('tr', [ E('th', 'الإعداد'), E('th', 'قبل'), E('th', 'بعد') ]) ].concat(rows.map(function(r) { return E('tr', r.map(function(c) { return E('td', c); })); })))));
-		if (!p.errors.length) out.appendChild(E('div', { 'class': 'am-msg am-ok' }, 'اجتاز التحقق. اضغط على تطبيق للحفظ.'));
-		this.updateBtns();
-	},
-
-	apply: function() {
-		var p = this.plan; if (!p || p.errors.length) return;
-		p.ops.forEach(function(o) {
-			if (o.t === 'sec') { if (!uci.get(o.c, o.s)) uci.add(o.c, o.type, o.s); }
-			else if (o.t === 'del') { if (uci.get(o.c, o.s)) uci.remove(o.c, o.s); }
-			else if (o.t === 'set') { if (uci.get(o.c, o.s)) uci.set(o.c, o.s, o.o, o.v); }
+		// Execute changes
+		ops.forEach(function(o) {
+			if (o.t === 'del') { if (uci.get(o.c, o.s)) uci.remove(o.c, o.s); }
+			else if (o.t === 'set') { 
+				if (!uci.get(o.c, o.s)) uci.add(o.c, 'interface', o.s); // ensure section exists
+				uci.set(o.c, o.s, o.o, o.v); 
+			}
 			else if (o.t === 'unset') { if (uci.get(o.c, o.s)) uci.unset(o.c, o.s, o.o); }
-			else if (o.t === 'list') { if (uci.get(o.c, o.s)) { if (o.v.length) uci.set(o.c, o.s, o.o, o.v); else uci.unset(o.c, o.s, o.o); } }
 		});
-		return uci.save().then(function() { return ui.changes.apply(); });
+
+		// Save and apply
+		uci.save().then(function() {
+			if (apply) {
+				return ui.changes.apply().then(function() {
+					ui.addNotification(null, E('p', 'تم حفظ وتطبيق الإعدادات بنجاح!'), 'info');
+				});
+			} else {
+				ui.addNotification(null, E('p', 'تم حفظ الإعدادات فقط.'), 'info');
+			}
+		}).catch(function(e) {
+			ui.addNotification(null, E('p', 'حدث خطأ: ' + e), 'danger');
+		});
 	},
+
 	handleSaveApply: null, handleSave: null, handleReset: null
 });
