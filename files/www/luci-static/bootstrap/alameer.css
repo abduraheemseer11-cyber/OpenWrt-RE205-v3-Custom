@@ -62,3 +62,6 @@ input,select,textarea,.form-control{background:#180a2b!important;color:var(--afg
 .mode-ap { background-color: #22c55e; }    /* أخضر */
 .mode-wds { background-color: #3b82f6; }   /* أزرق */
 .mode-mesh { background-color: #a855f7; }  /* بنفسجي */
+/* Bottom Action Buttons */
+.cbi-page-actions { position: fixed; bottom: 0; left: 0; right: 0; background: #1e0b36; padding: 10px 20px; border-top: 1px solid #3e1d6b; display: flex; justify-content: flex-end; gap: 10px; z-index: 100; }
+@media (min-width: 801px) { .cbi-page-actions { padding-left: 320px; } }
