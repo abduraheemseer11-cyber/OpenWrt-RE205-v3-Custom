@@ -50,3 +50,15 @@ input,select,textarea,.form-control{background:#180a2b!important;color:var(--afg
 .am-modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .am-mode{border:2px solid var(--aline);border-radius:12px;padding:12px;cursor:pointer;background:#180a2b}.am-mode.sel{border-color:var(--ahover);background:#3b1b5e}.am-mode b{display:block;margin-bottom:4px}.am-mode small{display:block}
 .am-hide{display:none!important}
+
+/* Quick Setup Mode Cards */
+.mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; margin: 20px 0; }
+.mode-card { border-radius: 12px; padding: 25px 15px; text-align: center; color: #fff; cursor: pointer; transition: all 0.2s ease; opacity: 0.6; border: 3px solid transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.mode-card:hover { opacity: 0.8; transform: translateY(-3px); }
+.mode-card.selected { opacity: 1; border-color: #fff; box-shadow: 0 4px 15px rgba(0,0,0,0.4); transform: scale(1.03); }
+.mode-card i { font-size: 36px; margin-bottom: 12px; display: block; font-style: normal; }
+.mode-card span { font-weight: bold; font-size: 15px; display: block; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.mode-pppoe { background-color: #ef4444; } /* أحمر */
+.mode-ap { background-color: #22c55e; }    /* أخضر */
+.mode-wds { background-color: #3b82f6; }   /* أزرق */
+.mode-mesh { background-color: #a855f7; }  /* بنفسجي */
